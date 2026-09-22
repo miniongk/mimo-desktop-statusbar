@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="utf-8" />
+    <title>MiMo composer 骨架 · 统计条预览</title>
+    <style>
+      /* Mirrors the real app's composer tokens + geometry closely enough to judge
+         the bar's typography, spacing and theming. */
+      :root {
+        --color-composer-surface: #ffffff;
+        --color-composer-input: #ffffff;
+        --color-composer-fg: #6b6b73;
+        --color-composer-placeholder: #a3a3a8;
+        --color-composer-tray-bg: #ececf0;
+        --bg: #f6f6f8;
+        --line: #e3e3e8;
+      }
+      html[data-theme="dark"] {
+        --color-composer-surface: #232327;
+        --color-composer-input: #232327;
+        --color-composer-fg: #9a9aa3;
+        --color-composer-placeholder: #6c6c74;
+        --color-composer-tray-bg: #2c2c31;
+        --bg: #17171a;
+        --line: #2e2e33;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--color-composer-fg);
+        font: 14px -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+        padding: 18px 0 0;
+      }
+      .stage { height: 150px; }
+      .composer-dock-zone {
+        position: relative;
+        z-index: 150;
+        width: 100%;
+        max-width: 768px;
+        margin: 0 auto;
+        padding: 0 28px 14px;
+      }
+      .composer-wrap { position: relative; }
+      .composer {
+        background: var(--color-composer-surface);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 10px 12px;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, .04);
+      }
+      .composer-input {
+        width: 100%;
+        border: 0;
+        outline: none;
+        background: transparent;
+        color: var(--color-composer-fg);
+        font: inherit;
+        resize: none;
+        height: 34px;
+      }
+      .composer-ai-disclaimer {
+        text-align: center;
+        margin-top: 6px;
+        font-size: 11px;
+        color: var(--color-composer-placeholder);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="stage"></div>
+    <div class="composer-dock-zone">
+      <div class="composer-wrap" id="composer-dock">
+        <div class="composer" id="composer">
+          <textarea class="composer-input" id="composer-input" placeholder="给 MiMo 发消息"></textarea>
+          <button id="send-btn">发送</button>
+        </div>
+        <div class="composer-ai-disclaimer" data-ai-disclaimer>内容由 AI 生成，请自行核查</div>
+      </div>
+    </div>
+  </body>
+</html>

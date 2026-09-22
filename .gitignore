@@ -1,0 +1,16 @@
+# runtime output
+logs/
+
+# packed installers (built with Compress-Archive, not source)
+*.zip
+
+# private research notes (kept locally, not published)
+docs/
+
+# node
+node_modules/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.log

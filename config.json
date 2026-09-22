@@ -1,0 +1,9 @@
+{
+  "port": 9222,
+  "refreshMs": 1000,
+  "busyRefreshMs": 250,
+  "contextWindowOverride": null,
+  "pinnedSessionId": null,
+  "composerInputPath": null,
+  "log": true
+}
