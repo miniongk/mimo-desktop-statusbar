@@ -1,9 +1,13 @@
-// The logon helper is a .vbs one-liner whose quoting has to survive paths with
-// spaces. Cheap to get wrong, so it is asserted rather than trusted.
+// The logon helper is a Startup .lnk to wscript.exe running bin/watch.js.
+// Writing a .vbs into the Startup folder is refused on this machine (correctly
+// — that is the classic malware drop), so the shape of that .lnk matters and
+// is asserted rather than trusted.
 //
 // Run: node test/autostart.mjs
 
-import { vbsFor, vbsLiteral } from "../src/autostart.mjs";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { lnkArguments, watchJsPath, autostartStatus, startupPath } from "../src/autostart.mjs";
 
 let pass = 0;
 let fail = 0;
@@ -12,36 +16,27 @@ const check = (name, ok, extra = "") => {
   ok ? pass++ : fail++;
 };
 
-const plain = vbsLiteral("hello");
-check("普通字符串加引号", plain === '"hello"', plain);
+check("watch.js 存在", existsSync(watchJsPath()), watchJsPath());
 
-const withQuote = vbsLiteral('say "hi"');
-check("内部引号要翻倍", withQuote === '"say ""hi"""', withQuote);
+const args = lnkArguments();
+console.log("      .lnk 参数:", args);
+check("指向本包的 watch.js", args.includes("watch.js"), args);
+check("带上 //B //Nologo(静默)", args.startsWith("//B //Nologo "), args);
+check("脚本路径带引号(路径可含空格)", /"[^"]+watch\.js"$/.test(args), args);
+check("参数是 ASCII", /^[\x00-\x7F]*$/.test(args));
 
-const body = vbsFor("C:\\Program Files\\MiMo Status\\bin\\enable.cmd", "--watch --quiet");
-const line = body.split("\r\n")[1];
-console.log("      生成的 VBS 行:", line);
+// watch.js itself must hand over to enable.cmd hidden (0 = window style).
+const js = readFileSync(watchJsPath(), "ascii");
+console.log("      watch.js:", js.replace(/\s+/g, " ").trim().slice(0, 120));
+check("watch.js 调用 enable.cmd", js.includes("enable.cmd"));
+check("watch.js 用隐藏窗口启动(Run(..., 0, ...))", /, *0,/.test(js));
+check("watch.js 无常驻(JS 执行完即退)", !/setInterval|while\s*\(/.test(js));
+check("watch.js 是 ASCII", /^[\x00-\x7F]*$/.test(js));
 
-check(
-  "命令行整体被包成一个字符串值",
-  /^CreateObject\("WScript\.Shell"\)\.Run ".+", 0, False$/.test(line),
-  line
-);
-
-// The value WScript receives must be:  "C:\Program Files\...\enable.cmd" --watch --quiet
-// i.e. the path quoted on its own, args outside the quotes.
-const m = /^CreateObject\("WScript\.Shell"\)\.Run (".+"), 0, False$/.exec(line);
-const literal = m[1];
-// Decode a VBS string literal back to its value.
-const value = literal.slice(1, -1).replace(/""/g, '"');
-check(
-  "解码后 = 带引号的路径 + 参数",
-  value === '"C:\\Program Files\\MiMo Status\\bin\\enable.cmd" --watch --quiet',
-  value
-);
-
-check("注释是 ASCII(不会乱码)", /^[\x00-\x7F]*$/.test(body));
-check("文件以换行收尾", body.endsWith("\r\n"));
+const st = autostartStatus();
+check("autostartStatus 返回路径", typeof st.path === "string" && st.path.endsWith(".lnk"), st.path);
+check("启动项路径在 Startup 文件夹", /\\Startup\\/.test(st.path), st.path);
+check("startupPath 与 status 一致", st.path === startupPath());
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

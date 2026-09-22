@@ -33,6 +33,8 @@
 - **给 MiMo 的桌面 / 开始菜单 / 任务栏快捷方式加上调试端口** —— 之后照常点 MiMo 图标,统计条就在
 - **注册开机自启**(隐藏的看门狗):登录后静默常驻;应用更新把 MiMo 重启后若没带端口,它会自动补一次带端口的重启
 
+  > 启动项是一个指向 `wscript.exe` 的快捷方式(不是脚本文件)。往启动文件夹里写 `.vbs` 会被杀软按恶意行为拦掉,快捷方式不会 —— 这也是它全程无窗口的原因。
+
 MiMo 自己的图标、名字、安装目录都没动,只是快捷方式多了一个启动参数。全部可还原(见卸载)。
 
 可选参数(`bin\install.cmd` 支持):
@@ -55,7 +57,7 @@ MiMo Desktop 不在默认位置时,先设环境变量 `MIMO_STATSBAR_APP` 指向
 
 | 操作 | 怎么做 |
 |---|---|
-| 开机自启 | 已默认开启(启动文件夹里的 `mimo-statusbar.vbs`,删掉它即停) |
+| 开机自启 | 已默认开启(启动文件夹里的「MiMo 会话统计条」快捷方式,删掉它即停) |
 | 手动启用 / 恢复 | 双击桌面「MiMo 统计条」(= `bin\enable.cmd`) |
 | 暂时关掉统计条 | 双击 `bin\stop.cmd` |
 | 完全卸载 | 双击 `bin\uninstall.cmd` |
@@ -90,7 +92,7 @@ MiMo Desktop 带单实例锁(`out/main/index.mjs` 的 `requestSingleInstanceLock
                             ├─ src/cdp.js         极简 CDP 客户端(fetch + Node 内置 WebSocket)
                             └─ src/page/bar.js    在渲染进程里渲染统计条
 
-启动文件夹 mimo-statusbar.vbs → 登录后静默跑 enable.cmd --watch(开机自启)
+启动文件夹「MiMo 会话统计条」.lnk → wscript bin/watch.js → 隐藏跑 enable.cmd --watch(开机自启)
 bin/stop.cmd     → src/stop.mjs       按锁文件里的 pid 结束注入器
 bin/uninstall.cmd → src/uninstall.mjs 停注入器 + 还原快捷方式 + 移除开机自启
 ```
@@ -244,7 +246,7 @@ MiMo 本身没有被改过,不需要恢复任何东西。之后正常启动 MiMo
 | 统计条显示了但数字不随对话切换 | 看日志里有没有「当前会话 -> …」;没有就是注入器没在轮询,`bin\stop.cmd` 后再 `bin\enable.cmd` |
 | 重复启动被拒(PID xxx) | 已有注入器在跑**且端口是通的**。确认要接管时用 `bin\launch.cmd --force`,或先 `bin\stop.cmd` |
 | 想关掉「更新后自动重启 MiMo」 | `config.json` 里设 `"recoverMiMo": "off"` |
-| 不想要开机自启 | 删掉启动文件夹里的 `mimo-statusbar.vbs` |
+| 不想要开机自启 | 删掉启动文件夹里的「MiMo 会话统计条」快捷方式 |
 
 诊断脚本:`node test\inspect-page.mjs` 看挂载与选择器,`node test\inspect-live.mjs` 核对会话与数字(`bin\_env.cmd` 会找到可用的 Node)。
 

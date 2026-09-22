@@ -219,7 +219,7 @@ async function main() {
   // The logon watcher is what makes it ride along with MiMo. Registered here,
   // not in enable.mjs: enable --watch is what the watcher itself runs, so it
   // cannot be the thing that first creates it.
-  const auto = installAutostart({ args: "--watch --quiet" });
+  const auto = installAutostart();
   if (auto.ok) console.log(`开机自启  : ${auto.path}`);
   else console.log("[!] 开机自启注册失败:", auto.error, "(可稍后手动加)");
 
