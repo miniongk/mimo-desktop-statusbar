@@ -1,8 +1,8 @@
 @echo off
-rem ASCII-only on purpose: cmd.exe parses this file with the OEM codepage before
-rem chcp takes effect, so any non-ASCII here corrupts the batch parser.
+rem ASCII only: cmd.exe parses this file with the OEM codepage before chcp.
 chcp 65001 >nul
+call "%~dp0_env.cmd"
 title Uninstall MiMo session status bar
-node "%~dp0..\src\uninstall.mjs" %*
+"%NODE_EXE%" "%~dp0..\src\uninstall.mjs" %*
 echo.
 pause

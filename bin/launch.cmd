@@ -1,9 +1,10 @@
 @echo off
-rem ASCII-only on purpose: cmd.exe parses this file with the OEM codepage before
-rem chcp takes effect, so any non-ASCII here corrupts the batch parser. All
-rem messages live in src/launch.mjs, which Node reads as UTF-8.
+rem ASCII only: cmd.exe parses this file with the OEM codepage before chcp.
+rem Interactive/debug launcher: keeps a console open and streams the log.
+rem For daily use, double-click bin\enable.cmd or the desktop shortcut.
 chcp 65001 >nul
+call "%~dp0_env.cmd"
 title MiMo session status bar
-node "%~dp0..\src\launch.mjs" %*
+"%NODE_EXE%" "%~dp0..\src\launch.mjs" %*
 echo.
 pause

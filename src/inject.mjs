@@ -10,6 +10,7 @@ import { dirname, join } from "node:path";
 import { probePort, CDP } from "./cdp.js";
 import { Store } from "./stats.js";
 import { resolveSession, defaultComposerInputPath } from "./resolve.mjs";
+import { recoverMiMo } from "./recovery.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..");
@@ -26,6 +27,10 @@ const DEFAULTS = {
   pinnedSessionId: null,
   // null = the desktop's real composer-input.json under %APPDATA%
   composerInputPath: null,
+  // What to do when MiMo is running WITHOUT the debug switch (app updates do
+  // this): auto = restart it with the switch, ask = confirm first, off = leave
+  // it alone. Only active when this process was started as a watcher.
+  recoverMiMo: "auto",
   showExpanded: false,
   log: true,
 };
@@ -154,6 +159,19 @@ async function main() {
           `[statusbar] 端口 ${cfg.port} 上还没有调试接口(已等 ${secs}s)。` +
             `应用必须用 bin\\launch.cmd 启动,且启动前旧进程要完全退出。`
         );
+        // Resident watcher: put MiMo back on the debug switch instead of
+        // waiting forever. Cooldown lives in recovery.mjs so a failing restart
+        // cannot loop.
+        if (process.env.MIMO_STATSBAR_WATCH === "1") {
+          const what = await recoverMiMo({
+            port: cfg.port,
+            mode: cfg.recoverMiMo ?? "auto",
+            log: (...a) => log(cfg, ...a),
+          }).catch((err) => `error:${err?.message}`);
+          if (what && what !== "ok" && what !== "no-app" && what !== "off") {
+            log(cfg, `自愈结果: ${what}`);
+          }
+        }
       }
       return false;
     }

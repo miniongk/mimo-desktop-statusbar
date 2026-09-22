@@ -8,11 +8,21 @@ import { existsSync, readFileSync, rmSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { unpatchShortcuts } from "./shortcuts.mjs";
+import { removeAutostart, autostartStatus } from "./autostart.mjs";
 
 const PKG_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const LOCK = join(PKG_ROOT, "logs", "injector.lock");
 const SHORTCUT_NAME = "MiMo 统计条";
 const purge = process.argv.includes("--purge");
+const cfg = (() => {
+  try {
+    return JSON.parse(readFileSync(join(PKG_ROOT, "config.json"), "utf8"));
+  } catch {
+    return {};
+  }
+})();
+const FLAG = `--remote-debugging-port=${Number(cfg.port) || 9222}`;
 
 function pidAlive(pid) {
   if (!pid || Number.isNaN(pid)) return false;
@@ -97,6 +107,24 @@ function removeShortcuts() {
 console.log("=== MiMo 会话统计条 · 卸载 ===\n");
 stopInjector();
 removeShortcuts();
+
+// Undo what enable.mjs did to the machine.
+const un = unpatchShortcuts(FLAG);
+if (un.error) console.log("[!] 还原 MiMo 快捷方式失败:", un.error);
+else if (un.changed.length) {
+  console.log(`[*] 已还原 ${un.changed.length} 个 MiMo 快捷方式(去掉调试端口):`);
+  for (const p of un.changed) console.log("      ", p);
+} else {
+  console.log("[*] MiMo 快捷方式无需还原。");
+}
+
+const a = removeAutostart();
+if (a.ok && a.removed) console.log("[*] 已移除开机自启。");
+else if (a.ok) console.log("[*] 没有开机自启项。");
+else console.log("[!] 移除开机自启失败:", a.error);
+if (autostartStatus().installed) {
+  console.log("[!] 开机自启仍在,可手动删除:", autostartStatus().path);
+}
 
 if (purge) {
   // Deleting the folder we are executing from has to happen after this process

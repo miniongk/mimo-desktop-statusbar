@@ -1,8 +1,10 @@
 @echo off
-rem ASCII-only on purpose: cmd.exe parses this file with the OEM codepage before
-rem chcp takes effect, so any non-ASCII here corrupts the batch parser.
+rem ASCII only: cmd.exe parses this file with the OEM codepage before chcp.
+rem Install + enable in one go. This is the file the README tells you to
+rem double-click; 安装.cmd at the package root is the same thing.
 chcp 65001 >nul
+call "%~dp0_env.cmd"
 title Install MiMo session status bar
-node "%~dp0..\src\install.mjs" %*
+"%NODE_EXE%" "%~dp0..\src\install.mjs" %* --enable
 echo.
 pause

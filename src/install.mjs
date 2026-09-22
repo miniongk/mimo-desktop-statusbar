@@ -18,18 +18,20 @@ import { spawn, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { installAutostart } from "./autostart.mjs";
 
 const PKG_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SHORTCUT_NAME = "MiMo 统计条";
 const DESCRIPTION = "后台启动 MiMo 会话统计条(无常驻窗口)";
 
 function parseArgs(argv) {
-  const out = { dir: null, shortcuts: true, run: false };
+  const out = { dir: null, shortcuts: true, run: false, enable: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--dir") out.dir = argv[++i];
     else if (a === "--no-shortcut") out.shortcuts = false;
     else if (a === "--run") out.run = true;
+    else if (a === "--enable") out.enable = true;
   }
   return out;
 }
@@ -157,7 +159,7 @@ async function main() {
     console.log("[ok] 复制完成");
   }
 
-  const startCmd = join(targetDir, "bin", "start-hidden.cmd");
+  const startCmd = join(targetDir, "bin", "enable.cmd");
   const stopCmd = join(targetDir, "bin", "stop.cmd");
   const installCmd = join(targetDir, "bin", "install.cmd");
   const uninstallCmd = join(targetDir, "bin", "uninstall.cmd");
@@ -214,17 +216,36 @@ async function main() {
   console.log(`停止统计条: ${stopCmd}`);
   console.log(`卸载      : ${uninstallCmd}`);
 
+  // The logon watcher is what makes it ride along with MiMo. Registered here,
+  // not in enable.mjs: enable --watch is what the watcher itself runs, so it
+  // cannot be the thing that first creates it.
+  const auto = installAutostart({ args: "--watch --quiet" });
+  if (auto.ok) console.log(`开机自启  : ${auto.path}`);
+  else console.log("[!] 开机自启注册失败:", auto.error, "(可稍后手动加)");
+
   console.log("\n下一步:");
-  console.log("  1. 退出正在运行的 MiMo(如果有)。");
-  console.log("  2. 双击桌面「MiMo 统计条」快捷方式 —— 统计条会出现在输入框下方。");
-  console.log("  3. 之后打开 MiMo 一律用这个快捷方式;开始菜单的原版图标不带调试端口。");
+  console.log("  启用脚本会顺手把 MiMo 的桌面/开始菜单/任务栏快捷方式加上调试端口");
+  console.log("  (可卸载还原),这样之后照常点 MiMo 图标即可。");
+
+  if (args.enable) {
+    console.log("\n[*] 正在启用…\n");
+    const r = spawnSync(process.execPath, [join(targetDir, "src", "enable.mjs")], {
+      stdio: "inherit",
+      windowsHide: false,
+    });
+    if (r.status !== 0 && r.status !== 2) {
+      console.error("[!] 启用步骤未完成,可稍后双击桌面「MiMo 统计条」重试。");
+    }
+    return;
+  }
 
   if (args.run) {
     console.log("\n[*] 正在后台启动统计条…");
-    spawn(process.execPath, [join(targetDir, "src", "start-hidden.mjs")], {
+    spawn(process.execPath, [join(targetDir, "src", "enable.mjs"), "--yes"], {
       detached: true,
       stdio: "ignore",
       windowsHide: true,
+      env: { ...process.env, MIMO_STATSBAR_WATCH: "1" },
     }).unref();
   }
 }
