@@ -277,6 +277,10 @@ MiMo 本身没有被改过,不需要恢复任何东西。之后正常启动 MiMo
 
 最后选的是外部 CDP 注入:完全不动 MiMo,可随时撤离。
 
+## 开发说明
+
+本项目由 **MiMo Desktop** 开发,使用 **MiMo V2.6 pro** 和 **MiMo V2.6 Flash** 模型。
+
 ## License
 
 MIT
