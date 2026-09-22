@@ -1,28 +1,249 @@
-# MiMo 会话统计条
+# MiMo 会话统计条 · MiMo Desktop Session Status Bar
 
 > 非官方第三方工具,与 Xiaomi 无关联。不修改 MiMo Desktop 的任何文件。
+>
+> Unofficial third-party tool, not affiliated with Xiaomi. It modifies no files inside MiMo Desktop.
 
-给 MiMo Desktop 加一条常驻在输入框(composer)下方的实时统计条:上下文占用、token 用量、缓存命中、花费、生成速度、工具调用、子代理、任务进度。
+给 MiMo Desktop 加一条常驻在输入框(composer)下方的实时统计条:上下文占用、token 用量、缓存命中、花费、生成速度、工具调用、子代理、任务进度。数据全部来自引擎自己的落库记录,不是估算;显示方式沿用应用的 CSS 变量,明暗主题自动跟随。
 
-数据全部来自引擎自己的落库记录,不是估算;显示方式沿用应用的 CSS 变量,明暗主题自动跟随。
+A live status bar docked under the composer of MiMo Desktop: context pressure, token usage, cache hit rate, cost, generation speed, tool calls, subagents and tasks. Every number comes from what the engine already wrote to its own database — nothing is estimated — and the bar inherits the app's CSS variables, so light and dark themes just work.
 
-![统计条](test/preview-live.png)
+**[English](#english)** · **[中文](#中文)**
 
-上图是真实会话的数据(不是示意):26% 上下文、25.22M 输入 token、97% 缓存命中、$0.299、102 tok/s、249 次工具调用。
+![status bar](test/preview-live.png)
 
-深色主题会自动跟随应用的 CSS 变量:
+上图是真实会话的数据。Real session data, not a mock-up: 26% context, 25.22M input tokens, 97% cache hit, $0.299, 102 tok/s, 249 tool calls.
 
-![深色主题](test/preview-darktheme.png)
+![dark theme](test/preview-darktheme.png)
 
-展开后可以看到工具分布、步数/消息数、每个子代理的状态、任务清单:
+展开后是工具分布、步数/消息数、子代理状态、任务清单。Expand the `▾` panel for the tool breakdown, step/message counts, live subagents and the task list.
 
-![明细面板](test/preview-expanded.png)
+![detail panel](test/preview-expanded.png)
 
-## 安装
+---
 
-前提只有一样:**MiMo Desktop 已经装好**。不需要装 Node —— 统计条直接用 MiMo 自带的那个 Node 运行时(`node:sqlite` 和 `WebSocket` 都在里面)。
+## English
 
-1. 把 `mimo-statusbar-install.zip` 拷到目标电脑,解压。
+### Install
+
+One prerequisite: **MiMo Desktop**. There is nothing to compile and nothing else to install — the scripts run on the Node runtime that MiMo Desktop already ships.
+
+1. Download `mimo-desktop-statusbar-v1.0.0.zip` from [Releases](https://github.com/miniongk/mimo-desktop-statusbar/releases) and unpack it.
+2. Double-click **`mimo-statusbar\安装.cmd`** (the filename means "install").
+3. If it asks 「现在关闭并重启 MiMo 吗?」(restart MiMo now?) → click **Yes**. Only the first run needs this.
+
+That single action does four things:
+
+- copies itself to `%LOCALAPPDATA%\Programs\mimo-statusbar`
+- creates Desktop / Start Menu shortcuts named 「MiMo 统计条」(a backup entry point)
+- **adds the debug switch to the MiMo shortcuts** on the Desktop, Start Menu and taskbar — afterwards you launch MiMo exactly as usual and the bar is just there
+- **registers a hidden logon watcher**: after an app update restarts MiMo without the switch, it puts MiMo back on the switch by itself
+
+MiMo's icons, name and install directory are untouched; the shortcuts only gain a launch argument. Everything is reversible (see Uninstall).
+
+Optional flags (accepted by `bin\install.cmd`):
+
+| Flag | Effect |
+|---|---|
+| `--dir <path>` | install somewhere else (default `%LOCALAPPDATA%\Programs\mimo-statusbar`) |
+| `--no-shortcut` | do not create the 「MiMo 统计条」shortcut |
+| `--enable` | enable right after installing (`安装.cmd` passes this) |
+
+If MiMo Desktop is not in its default location, set `MIMO_STATSBAR_APP` to the full path of `Xiaomi MiMo.exe` before installing.
+
+### Daily use
+
+**There is nothing to click.** After installing:
+
+- open MiMo the way you always do — the bar comes up with it
+- when an app update restarts MiMo, the watcher restarts it once with the switch and the bar returns
+- to enable or recover by hand: double-click 「MiMo 统计条」
+
+| Want to | Do this |
+|---|---|
+| check auto-start is on | a shortcut named 「MiMo 会话统计条」in the Startup folder; delete it to turn off |
+| enable / recover manually | double-click 「MiMo 统计条」 (= `bin\enable.cmd`) |
+| turn the bar off for now | double-click `bin\stop.cmd` |
+| uninstall completely | double-click `bin\uninstall.cmd` |
+
+It runs hidden — no console window stays open. The log is `logs\statusbar.log`. To stop the "restart MiMo after an update" behaviour, set `"recoverMiMo": "off"` in `config.json`.
+
+Only one injector may run at a time (two would fight over the same DOM node); to take over deliberately use `bin\launch.cmd --force`.
+
+### Why the first run restarts MiMo
+
+MiMo Desktop holds a single-instance lock (`requestSingleInstanceLock` in `out/main/index.mjs`). Launching it again with extra arguments drops those arguments and just focuses the existing window, so the debug port never opens. The first run has to close the old process and start MiMo again with the switch.
+
+Afterwards you never think about it: the shortcuts already carry the argument, and only an app update — which restarts MiMo its own way — needs the watcher's help.
+
+The bar only ever adds `--remote-debugging-port=9222`. It never touches MiMo's files: not the install directory, not `app.asar`, not the config.
+
+### What it shows
+
+| Metric | Source |
+|---|---|
+| model / mode | `modelID`/`providerID`/`mode` of the newest main-agent message |
+| context pressure (bar + % + counts) | `tokens.total` of that message ÷ context window |
+| tokens (in ↑ / out ↓ / reasoning) | summed `tokens` buckets over every `step-finish` |
+| cache hit rate | `cacheRead ÷ (input + cacheRead + cacheWrite)` |
+| cost | sum of `step-finish.cost` (**the engine's own number** — see below) |
+| generation speed | output tokens ÷ actual generation time (idle time excluded) |
+| tool calls / breakdown | counts and grouping of `part` rows with `type=tool` |
+| subagents | live status and turn counts from `actor_registry` |
+| task progress | `task` rows grouped by status |
+| steps / messages / compactions / title | inside the `▾` detail panel |
+
+The context bar turns amber at 75% and red at 90%; the dot on the left breathes while a subagent is running or something happened in the last 4 seconds.
+
+### How the cost is calculated
+
+The `$` figure is **computed by the engine and written to the database**; the bar only sums it. It never touches a price list.
+
+Once per model step the engine calls `getUsage()` and stores the result as `part.data.cost`:
+
+```
+input × price.input            ← input excludes the cached part
++ output × price.output        ← output excludes reasoning
++ reasoning × price.output     ← reasoning is billed at the output rate
++ cache.read × price.cache.read
++ cache.write × price.cache.write
+```
+
+Prices are **USD per 1M tokens**, accumulated with `Decimal`.
+
+Three behaviours worth knowing:
+
+- **A model with no price is recorded as 0.** In the source it is `costInfo?.input ?? 0`, so models without a price entry (some `mimo-*` channels, for instance) cost nothing. Tokens going up while `$` stays flat is normal.
+- **The `input` bucket is the uncached part.** The engine subtracts `cacheRead` and `cacheWrite` first and bills cached tokens separately at `cache.read`, so nothing is double-counted.
+- **Past 200k tokens it may switch price tier.** When `input + cache.read > 200000` and the model defines `experimentalOver200K`, that tier's prices are used instead.
+
+The per-message `cost` is accumulated step by step (`message.cost += usage.cost`), so summing steps and summing messages agree exactly — verified to be a difference of 0.
+
+**This is an estimate, not a bill.** Actual charges are whatever the platform bills you.
+
+### Who sets model prices
+
+Prices come from the **models.dev community catalog**: the engine fetches and caches it at `~/.cache/mimocode/models.json`, and the desktop keeps its own copy in `%APPDATA%\Xiaomi MiMo\models-with-claude.json`. Both hold the same data, keyed by `provider/model`.
+
+Custom (BYOK) API models follow the same rule: if the id you configured exists in the catalog it gets that price; if not, `cost()` fills in zeros and the bar shows `$0`. **The desktop's custom-model form has no price field** (only name, API key and context limits), so setting a price means editing the config file yourself:
+
+```jsonc
+// ~/.config/mimocode/mimocode.json
+"provider": {
+  "myproxy": {
+    "npm": "@ai-sdk/openai-compatible",
+    "options": { "baseURL": "https://…/v1", "apiKey": "…" },
+    "models": {
+      "my-model": {
+        "name": "my-model",
+        "cost": {                        // USD / 1M tokens
+          "input": 0.15,                 // uncached input
+          "output": 0.6,                 // output (reasoning bills at the output rate;
+                                         // a reasoning field in the catalog is ignored)
+          "cache_read": 0.003,           // cache hit reads
+          "cache_write": 0               // cache writes, optional
+        },
+        "context_over_200k": {           // optional: used past 200k tokens
+          "input": 0.3, "output": 1.2, "cache_read": 0.006, "cache_write": 0
+        }
+      }
+    }
+  }
+}
+```
+
+Restart MiMo afterwards for it to take effect.
+
+Worked example, with the catalog price of `deepseek/deepseek-flash` (`0.15 / 0.6 / 0.003`) — the recomputation matches the database to the last digit:
+
+| step | input | output | reasoning | cache.read | stored cost | recomputed |
+|---|---|---|---|---|---|---|
+| 1 | 42530 | 271 | 761 | 0 | 0.0069987 | 0.0069987 |
+| 2 | 298 | 198 | 54 | 43520 | 0.00032646 | 0.00032646 |
+
+### Configuration
+
+`config.json`:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `port` | `9222` | debug port, shared with the launcher |
+| `refreshMs` | `1000` | poll interval while idle |
+| `busyRefreshMs` | `250` | poll interval while a subagent is running |
+| `contextWindowOverride` | `null` | force a context window; otherwise looked up per `provider/model` |
+| `pinnedSessionId` | `null` | pin one session (beats everything else) |
+| `composerInputPath` | `null` | the file where the desktop records the open conversation |
+| `recoverMiMo` | `"auto"` | after an update restarts MiMo without the switch: `auto` restart it, `ask` confirm first, `off` leave it |
+| `log` | `true` | write the polling log |
+
+Environment overrides: `MIMO_STATSBAR_CONFIG` (alternate config file), `MIMO_STATSBAR_APP` (alternate app path).
+
+### Limitations
+
+- **MiMo must be started with the debug switch.** The bar attaches over `--remote-debugging-port` instead of patching the app. Install adds that switch to the MiMo shortcuts and the logon watcher recovers from updates; running `Xiaomi MiMo.exe` bare will still come up without the bar.
+- **The open conversation is tracked from the UI.** It uses the composer variant (dock = a conversation is open) plus the desktop's `currentKey`. On the new-task page you get `新对话 · 还没有数据` rather than the previous conversation's numbers.
+- **The context window depends on the local model catalog.** No entry means tokens only. Use `contextWindowOverride` to pin it.
+- **Token counts are exact; money is the engine's estimate.**
+
+### Uninstall
+
+Double-click `bin\uninstall.cmd`. It stops the injector, removes the 「MiMo 统计条」shortcuts, **restores the MiMo shortcuts** (strips the debug switch) and **removes the logon watcher**. Add `--purge` to delete the install directory as well.
+
+### Troubleshooting
+
+| Symptom | What to do |
+|---|---|
+| the bar vanished after an app update | the watcher restarts MiMo once (look for `自愈结果: restarted` in the log). If that is off, double-click 「MiMo 统计条」 |
+| the bar never appears | check `logs\statusbar.log`. "端口 9222 上还没有调试接口" means MiMo came up without the switch — recover once by hand |
+| no bar when launching `Xiaomi MiMo.exe` directly | expected: that launch has no switch. Use a MiMo icon, or wait for the watcher |
+| numbers do not follow the conversation | look for `当前会话 ->` in the log; if missing, `bin\stop.cmd` then `bin\enable.cmd` |
+| start refused (PID xxx) | an injector is already running **and the port is up**. Take over with `bin\launch.cmd --force`, or `bin\stop.cmd` first |
+| turn off the auto-restart | `"recoverMiMo": "off"` in `config.json` |
+| turn off auto-start | delete 「MiMo 会话统计条」from the Startup folder |
+
+### Development
+
+| Command | What it covers |
+|---|---|
+| `node test/resolve.mjs` | which conversation is shown; new-task page, temporary keys, broken JSON |
+| `node test/stats.mjs` | the SQL layer against a fixture database |
+| `node test/render.mjs` | mounting and DOM assertions in headless Edge; writes the preview images |
+| `node test/e2e.mjs` | the real injector against the real `mimocode.db` |
+| `node test/shortcuts.mjs` | shortcut patching: idempotent, reversible, replaces rather than stacks |
+| `node test/autostart.mjs` | the logon .lnk shape |
+| `node test/inspect-live.mjs` | against a running instance: does the bar match the DB |
+| `bin\launch.cmd --dry-run` | what the launcher would do, without doing it |
+
+Nothing to build — the source is the deliverable. `e2e.mjs` stands in a fake composer page, so it exercises everything except "does the app open the debug port".
+
+### Why not DLL injection
+
+Hooking the UI with an injected DLL does not work on Electron: the renderer is Chromium and getting at the DOM from native code means reaching into V8/Blink internals that break on every upgrade. Dropping a DLL into an application directory is also the textbook shape of malware, and antivirus treats it accordingly.
+
+Two closer routes were tried and rejected:
+
+- `NODE_OPTIONS=--require=hook.cjs` — the Electron fuse `EnableNodeOptionsEnvironmentVariable` is on in this build, but Electron strips `--require` for the main process (the same variable works under `ELECTRON_RUN_AS_NODE`), so nothing ever ran.
+- patching the preload inside `app.asar` — possible, since `EnableEmbeddedAsarIntegrityValidation` is off, but it modifies application files and every update overwrites it.
+
+External CDP injection it is: nothing inside MiMo changes, and stopping the injector is a clean exit.
+
+### Development notes
+
+Built with **MiMo Desktop**, using the **MiMo V2.6 pro** and **MiMo V2.6 Flash** models.
+
+### License
+
+MIT
+
+---
+
+## 中文
+
+### 安装
+
+前提只有一样:**MiMo Desktop 已经装好**。不需要装 Node,也不需要编译 —— 脚本直接用 MiMo Desktop 自带的那个 Node 运行时跑。
+
+1. 从 [Releases](https://github.com/miniongk/mimo-desktop-statusbar/releases) 下载 `mimo-desktop-statusbar-v1.0.0.zip`,解压。
 2. 双击 **`mimo-statusbar\安装.cmd`**。
 3. 如果弹出「现在关闭并重启 MiMo 吗?」→ 点**是**(只有第一次,以及应用更新后需要)。
 
@@ -47,7 +268,7 @@ MiMo 自己的图标、名字、安装目录都没动,只是快捷方式多了�
 
 MiMo Desktop 不在默认位置时,先设环境变量 `MIMO_STATSBAR_APP` 指向 `Xiaomi MiMo.exe`,再运行安装。
 
-## 日常使用
+### 日常使用
 
 **什么都不用点。** 装完之后:
 
@@ -66,7 +287,7 @@ MiMo Desktop 不在默认位置时,先设环境变量 `MIMO_STATSBAR_APP` 指向
 
 同一时刻只允许一个注入器(它们会互相覆盖同一个 DOM 节点);确认要接管时用 `bin\launch.cmd --force`。
 
-## 为什么第一次要重启
+### 为什么第一次要重启
 
 MiMo Desktop 带单实例锁(`out/main/index.mjs` 的 `requestSingleInstanceLock`)。已经在运行时,你再用带参数的方式启动它,新进程会把参数丢掉、只把旧窗口拉到前台 —— 调试端口永远不会打开。所以第一次必须关掉旧进程,由统计条带参数重新拉起。
 
@@ -74,50 +295,7 @@ MiMo Desktop 带单实例锁(`out/main/index.mjs` 的 `requestSingleInstanceLock
 
 统计条只是给应用加了一个 `--remote-debugging-port=9222` 参数,**没有改动 MiMo 的任何文件**。安装目录、`app.asar`、配置文件都保持原样。
 
-## 原理
-
-```
-安装.cmd / bin/enable.cmd
-   └─ src/enable.mjs
-        ├─ src/shortcuts.mjs   给 MiMo 快捷方式加上调试端口(幂等,可还原)
-        ├─ 端口没开且 MiMo 在跑 → 弹框确认后重启
-        └─ 拉起后台注入器(windowsHide,无窗口)
-             └─ src/launch.mjs --hidden
-                  ├─ 端口已开 → 只挂注入器
-                  ├─ 端口没开且 MiMo 在跑 → 由 recovery.mjs 自动补一次重启
-                  └─ MiMo 没在跑 → 带 --remote-debugging-port 启动它
-                       └─ src/inject.mjs  轮询取数 → 通过 CDP 推给页面
-                            ├─ src/stats.js       只读查询 mimocode.db(引擎的会话库)
-                            ├─ src/resolve.mjs    判定当前会话
-                            ├─ src/cdp.js         极简 CDP 客户端(fetch + Node 内置 WebSocket)
-                            └─ src/page/bar.js    在渲染进程里渲染统计条
-
-启动文件夹「MiMo 会话统计条」.lnk → wscript bin/watch.js → 隐藏跑 enable.cmd --watch(开机自启)
-bin/stop.cmd     → src/stop.mjs       按锁文件里的 pid 结束注入器
-bin/uninstall.cmd → src/uninstall.mjs 停注入器 + 还原快捷方式 + 移除开机自启
-```
-
-统计数字来自 `~/.local/share/mimocode/mimocode.db`。引擎每推进一步都会落一条记录,用量和花费都由它算好:
-
-```json
-{"type":"step-finish","tokens":{"total":43562,"input":42530,"output":271,
- "reasoning":761,"cache":{"write":0,"read":43520}},"cost":0.00032646}
-```
-
-数据库以只读方式打开,不建 `-wal`、不碰写锁,和正在跑的 agent 互不干扰。
-
-**当前会话**由两件事共同决定,缺一不可:
-
-1. **composer 的变体。** 渲染层会挂两种:`dock`(打开着一条对话,带 `composer-dock` id)和 `home`(新建任务页,带 `composer-home` 类、没有 id)。只有 dock 才代表「有一条对话打开」。
-2. **`%APPDATA%\Xiaomi MiMo\composer-input.json` 的 `currentKey`**,桌面的「当前对话」记录。
-
-为什么两个都要:点「新建任务」回到空白页时,桌面**不会**清掉 `currentKey`,它还指向上一条对话 —— 只看它就等于把上一条的数字挂在新对话上。所以判定顺序是:不是 dock → 显示 `新对话 · 还没有数据`;是 dock → 按 `currentKey` 取该会话。
-
-统计条带自愈:注入器每轮都会带上一个心跳期限,连续十轮收不到更新(默认 10 秒)它就自行退场。所以在 Windows 上被强杀、进程崩了、控制台被关掉,留下的都不会是一条数字冻结的假条。
-
-注入器还会自我升级:页面上的统计条版本比脚本旧时,直接就地替换(日志里会写 `页面上的统计条是 v1,升级到 v2`),不需要重启应用。
-
-## 显示什么
+### 显示什么
 
 | 指标 | 来源 |
 |---|---|
@@ -134,7 +312,7 @@ bin/uninstall.cmd → src/uninstall.mjs 停注入器 + 还原快捷方式 + 移�
 
 上下文条在 75% 变琥珀、90% 变红;有子代理在跑或最近 4 秒内有动作时,左侧圆点会呼吸。
 
-## 费用怎么算出来的
+### 费用怎么算出来的
 
 `$` 那一栏是**引擎自己算好写进库的**,统计条只做求和 —— 不碰价格表、不做乘法。
 
@@ -199,7 +377,7 @@ input × price.input            ← input 已减掉缓存部分
 | 1 | 42530 | 271 | 761 | 0 | 0.0069987 | 0.0069987 |
 | 2 | 298 | 198 | 54 | 43520 | 0.00032646 | 0.00032646 |
 
-## 配置
+### 配置
 
 `config.json`:
 
@@ -216,14 +394,14 @@ input × price.input            ← input 已减掉缓存部分
 
 对应环境变量:`MIMO_STATSBAR_CONFIG`(换配置文件)、`MIMO_STATSBAR_APP`(换可执行文件路径)。
 
-## 已知限制
+### 已知限制
 
 - **MiMo 必须带调试端口启动。** 统计条不改应用文件,靠 `--remote-debugging-port` 附加。安装时会给 MiMo 的快捷方式加上这个参数,并注册开机自启的看门狗自动补救;但如果你直接运行 `Xiaomi MiMo.exe`(不带参数),统计条会缺席,直到看门狗把它拉回正轨。
 - **当前会话跟着界面走。** 判定依据是 composer 变体(是否打开着一条对话)+ 桌面 `composer-input.json` 的 `currentKey`。在新建任务页会显示 `新对话 · 还没有数据`,不会拿上一条对话的数字充数。刚新建、引擎还没落库的对话,`currentKey` 是临时 `c…` key,同样按新对话处理。
 - **上下文窗口取决于本机模型目录。** 目录里没有对应条目就只能显示 token。用 `contextWindowOverride` 兜底。
 - **花了多少 token 是准确的,钱是引擎估的。** 数值直接取自引擎的 `cost` 字段。
 
-## 卸载
+### 卸载
 
 双击安装目录里的 `bin\uninstall.cmd`(默认装在 `%LOCALAPPDATA%\Programs\mimo-statusbar`)。它会:
 
@@ -236,7 +414,7 @@ input × price.input            ← input 已减掉缓存部分
 
 MiMo 本身没有被改过,不需要恢复任何东西。之后正常启动 MiMo 即可。
 
-## 故障排查
+### 故障排查
 
 | 现象 | 原因 / 做法 |
 |---|---|
@@ -250,7 +428,7 @@ MiMo 本身没有被改过,不需要恢复任何东西。之后正常启动 MiMo
 
 诊断脚本:`node test\inspect-page.mjs` 看挂载与选择器,`node test\inspect-live.mjs` 核对会话与数字(`bin\_env.cmd` 会找到可用的 Node)。
 
-## 开发
+### 开发
 
 | 命令 | 说明 |
 |---|---|
@@ -259,14 +437,13 @@ MiMo 本身没有被改过,不需要恢复任何东西。之后正常启动 MiMo
 | `node test/render.mjs` | 渲染层:headless Edge 里挂载并断言 DOM,输出三张预览图 |
 | `node test/e2e.mjs` | 全链路:真实注入器 + 真实 `mimocode.db`,验证切换对话、新任务页、自愈退场 |
 | `node test/shortcuts.mjs` | 快捷方式补丁:幂等、还原、替换而非叠加端口(在临时目录里做) |
-| `node test/autostart.mjs` | 开机自启 VBS 的引号转义 |
+| `node test/autostart.mjs` | 开机自启 .lnk 的形状 |
 | `node test/inspect-live.mjs` | 对正在跑的实例:核对统计条显示的会话/数字是否与桌面 currentKey 及数据库一致 |
-| `node test/inspect-page.mjs` | 对正在跑的实例:看 composer 选择器、统计条挂载状态 |
 | `bin\launch.cmd --dry-run` | 只看启动器会做什么,不动应用 |
 
-`e2e.mjs` 用一个仿 composer 的无头页面当替身,所以它验证的是「除应用是否开启调试端口之外」的每一环。
+源码即发行物,没有构建步骤。`e2e.mjs` 用一个仿 composer 的无头页面当替身,所以它验证的是「除应用是否开启调试端口之外」的每一环。
 
-## 关于 DLL 注入
+### 关于 DLL 注入
 
 最初的想法是写个 DLL 注入进去 hook UI。这条路对 Electron 不通:渲染进程是 Chromium,要拿到 DOM 得从原生侧调 V8/Blink 内部 API,应用一升级就崩;而且「把 DLL 丢进目录里自注入」这个行为模式本身就与恶意软件一致,会被杀软拦。
 
@@ -277,10 +454,10 @@ MiMo 本身没有被改过,不需要恢复任何东西。之后正常启动 MiMo
 
 最后选的是外部 CDP 注入:完全不动 MiMo,可随时撤离。
 
-## 开发说明
+### 开发说明
 
 本项目由 **MiMo Desktop** 开发,使用 **MiMo V2.6 pro** 和 **MiMo V2.6 Flash** 模型。
 
-## License
+### License
 
 MIT
