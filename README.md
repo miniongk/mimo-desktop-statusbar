@@ -28,6 +28,8 @@ A live status bar docked under the composer of MiMo Desktop: context pressure, t
 
 One prerequisite: **MiMo Desktop**. There is nothing to compile and nothing else to install — the scripts run on the Node runtime that MiMo Desktop already ships.
 
+> That runtime is MiMo's own `mimo-node` shim, not standalone Node, and it refuses to start unless `MIMO_ELECTRON_NODE_HOST` points at `Xiaomi MiMo.exe` (otherwise: `mimo-node: MIMO_ELECTRON_NODE_HOST is not set`). `bin\_env.cmd` resolves the host and sets it for you — a real Node on `PATH` also works and ignores the variable.
+
 1. Download `mimo-desktop-statusbar-v1.0.0.zip` from [Releases](https://github.com/miniongk/mimo-desktop-statusbar/releases) and unpack it.
 2. Double-click **`mimo-statusbar\安装.cmd`** (the filename means "install").
 3. If it asks 「现在关闭并重启 MiMo 吗?」(restart MiMo now?) → click **Yes**. Only the first run needs this.
@@ -205,16 +207,18 @@ Double-click `bin\uninstall.cmd`. It stops the injector, removes the 「MiMo 统
 
 | Command | What it covers |
 |---|---|
-| `node test/resolve.mjs` | which conversation is shown; new-task page, temporary keys, broken JSON |
-| `node test/stats.mjs` | the SQL layer against a fixture database |
-| `node test/render.mjs` | mounting and DOM assertions in headless Edge; writes the preview images |
-| `node test/e2e.mjs` | the real injector against the real `mimocode.db` |
-| `node test/shortcuts.mjs` | shortcut patching: idempotent, reversible, replaces rather than stacks |
-| `node test/autostart.mjs` | the logon .lnk shape |
+| `bin\test.cmd` | everything (each entry below is `bin\test.cmd <name>`) |
+| `bin\test.cmd runtime` | the bundled `mimo-node` shim and `bin\_env.cmd` |
+| `bin\test.cmd resolve` | which conversation is shown; new-task page, temporary keys, broken JSON |
+| `bin\test.cmd stats` | the SQL layer against a fixture database |
+| `bin\test.cmd render` | mounting and DOM assertions in headless Edge; writes the preview images |
+| `bin\test.cmd e2e` | the real injector against the real `mimocode.db` |
+| `bin\test.cmd shortcuts` | shortcut patching: idempotent, reversible, replaces rather than stacks |
+| `bin\test.cmd autostart` | the logon .lnk shape |
 | `node test/inspect-live.mjs` | against a running instance: does the bar match the DB |
 | `bin\launch.cmd --dry-run` | what the launcher would do, without doing it |
 
-Nothing to build — the source is the deliverable. `e2e.mjs` stands in a fake composer page, so it exercises everything except "does the app open the debug port".
+Nothing to build — the source is the deliverable. Use `bin\test.cmd` (or `call bin\_env.cmd` first) rather than bare `node`, so the bundled runtime is resolved. `e2e.mjs` stands in a fake composer page, so it exercises everything except "does the app open the debug port".
 
 ### Why not DLL injection
 
@@ -242,6 +246,8 @@ MIT
 ### 安装
 
 前提只有一样:**MiMo Desktop 已经装好**。不需要装 Node,也不需要编译 —— 脚本直接用 MiMo Desktop 自带的那个 Node 运行时跑。
+
+> 那个运行时其实是 MiMo 自己的 `mimo-node` 壳,不是独立 Node:它要求 `MIMO_ELECTRON_NODE_HOST` 指向 `Xiaomi MiMo.exe`,否则报 `mimo-node: MIMO_ELECTRON_NODE_HOST is not set`。`bin\_env.cmd` 会自动找到主程序并把变量设上 —— 如果 `PATH` 里有真正的 Node 也能用(那种情况会忽略这个变量)。
 
 1. 从 [Releases](https://github.com/miniongk/mimo-desktop-statusbar/releases) 下载 `mimo-desktop-statusbar-v1.0.0.zip`,解压。
 2. 双击 **`mimo-statusbar\安装.cmd`**。
@@ -432,16 +438,18 @@ MiMo 本身没有被改过,不需要恢复任何东西。之后正常启动 MiMo
 
 | 命令 | 说明 |
 |---|---|
-| `node test/resolve.mjs` | 会话识别:currentKey 优先,含新任务页 / 临时 key / 坏 JSON 的边界 |
-| `node test/stats.mjs` | 数据层:自建 SQLite fixture,覆盖空会话、只有子代理、压缩等边界 |
-| `node test/render.mjs` | 渲染层:headless Edge 里挂载并断言 DOM,输出三张预览图 |
-| `node test/e2e.mjs` | 全链路:真实注入器 + 真实 `mimocode.db`,验证切换对话、新任务页、自愈退场 |
-| `node test/shortcuts.mjs` | 快捷方式补丁:幂等、还原、替换而非叠加端口(在临时目录里做) |
-| `node test/autostart.mjs` | 开机自启 .lnk 的形状 |
+| `bin\test.cmd` | 全部(下面每条都是 `bin\test.cmd <名字>`) |
+| `bin\test.cmd runtime` | MiMo 自带的 `mimo-node` 壳与 `bin\_env.cmd` 的解析 |
+| `bin\test.cmd resolve` | 会话识别:currentKey 优先,含新任务页 / 临时 key / 坏 JSON 的边界 |
+| `bin\test.cmd stats` | 数据层:自建 SQLite fixture,覆盖空会话、只有子代理、压缩等边界 |
+| `bin\test.cmd render` | 渲染层:headless Edge 里挂载并断言 DOM,输出三张预览图 |
+| `bin\test.cmd e2e` | 全链路:真实注入器 + 真实 `mimocode.db`,验证切换对话、新任务页、自愈退场 |
+| `bin\test.cmd shortcuts` | 快捷方式补丁:幂等、还原、替换而非叠加端口(在临时目录里做) |
+| `bin\test.cmd autostart` | 开机自启 .lnk 的形状 |
 | `node test/inspect-live.mjs` | 对正在跑的实例:核对统计条显示的会话/数字是否与桌面 currentKey 及数据库一致 |
 | `bin\launch.cmd --dry-run` | 只看启动器会做什么,不动应用 |
 
-源码即发行物,没有构建步骤。`e2e.mjs` 用一个仿 composer 的无头页面当替身,所以它验证的是「除应用是否开启调试端口之外」的每一环。
+源码即发行物,没有构建步骤。跑测试用 `bin\test.cmd`(或先 `call bin\_env.cmd`),别直接裸 `node`,否则会踩到 `mimo-node` 壳的环境变量要求。`e2e.mjs` 用一个仿 composer 的无头页面当替身,所以它验证的是「除应用是否开启调试端口之外」的每一环。
 
 ### 关于 DLL 注入
 
