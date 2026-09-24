@@ -213,15 +213,27 @@ try {
     switched?.session?.id === session.id,
     `${switched?.session?.id} vs ${session.id}`
   );
+  // The main row is the *current model's* slice now, so compare session totals
+  // and let the per-model list be checked separately below.
   check(
-    "切换后工具数也跟着变",
-    switched?.tools?.total === expected.tools.total,
-    `${switched?.tools?.total} vs ${expected.tools.total}`
+    "切换后会话工具总量也跟着变",
+    switched?.totals?.tools === expected.totals.tools,
+    `${switched?.totals?.tools} vs ${expected.totals.tools}`
   );
   check(
-    "切换后步数也跟着变",
-    switched?.tokens?.steps === expected.tokens.steps,
-    `${switched?.tokens?.steps} vs ${expected.tokens.steps}`
+    "切换后会话步数总量也跟着变",
+    switched?.totals?.steps === expected.totals.steps,
+    `${switched?.totals?.steps} vs ${expected.totals.steps}`
+  );
+  check(
+    "按模型拆分已下发(models 非空)",
+    Array.isArray(switched?.models) && switched.models.length > 0,
+    JSON.stringify(switched?.models?.map((m) => m.modelID))
+  );
+  check(
+    "恰好一个模型标为当前",
+    (switched?.models ?? []).filter((m) => m.isCurrent).length === 1,
+    JSON.stringify((switched?.models ?? []).map((m) => [m.modelID, m.isCurrent]))
   );
   const text2 = await cdp.eval(
     "document.getElementById('mimo-statusbar-host').innerText.replace(/\\n/g,' | ')"
@@ -277,8 +289,8 @@ try {
   }
   check(
     "回到对话后立刻恢复统计数字",
-    restored?.session?.id === session.id && restored?.tools?.total === expected.tools.total,
-    `${restored?.session?.id} tools=${restored?.tools?.total} vs ${expected.tools.total}`
+    restored?.session?.id === session.id && restored?.totals?.tools === expected.totals.tools,
+    `${restored?.session?.id} tools=${restored?.totals?.tools} vs ${expected.totals.tools}`
   );
   check("有刷新节奏(往返 >1 次)", (injectorLog.match(/已附加到/g) ?? []).length >= 1);
 

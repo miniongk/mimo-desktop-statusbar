@@ -211,6 +211,13 @@ async function main() {
   }
 
   console.log("\n=== 安装完成 ===");
+  console.log(`版本      : ${(() => {
+    try {
+      return readFileSync(join(PKG_ROOT, "VERSION"), "utf8").trim();
+    } catch {
+      return "(未知)";
+    }
+  })()}`);
   console.log(`安装目录  : ${targetDir}`);
   console.log(`日常启动  : ${made[0] || startCmd}`);
   console.log(`停止统计条: ${stopCmd}`);

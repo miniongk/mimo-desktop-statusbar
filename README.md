@@ -10,6 +10,8 @@ A live status bar docked under the composer of MiMo Desktop: context pressure, t
 
 **[English](#english)** · **[中文](#中文)**
 
+当前版本 / Current release: **v1.1.0** — [Releases](https://github.com/miniongk/mimo-desktop-statusbar/releases)
+
 ![status bar](test/preview-live.png)
 
 上图是真实会话的数据。Real session data, not a mock-up: 26% context, 25.22M input tokens, 97% cache hit, $0.299, 102 tok/s, 249 tool calls.
@@ -30,7 +32,7 @@ One prerequisite: **MiMo Desktop**. There is nothing to compile and nothing else
 
 > That runtime is MiMo's own `mimo-node` shim, not standalone Node, and it refuses to start unless `MIMO_ELECTRON_NODE_HOST` points at `Xiaomi MiMo.exe` (otherwise: `mimo-node: MIMO_ELECTRON_NODE_HOST is not set`). `bin\_env.cmd` resolves the host and sets it for you — a real Node on `PATH` also works and ignores the variable.
 
-1. Download `mimo-desktop-statusbar-v1.0.0.zip` from [Releases](https://github.com/miniongk/mimo-desktop-statusbar/releases) and unpack it.
+1. Download `mimo-desktop-statusbar-v1.1.0.zip` from [Releases](https://github.com/miniongk/mimo-desktop-statusbar/releases) and unpack it.
 2. Double-click **`mimo-statusbar\安装.cmd`** (the filename means "install").
 3. If it asks 「现在关闭并重启 MiMo 吗?」(restart MiMo now?) → click **Yes**. Only the first run needs this.
 
@@ -86,16 +88,17 @@ The bar only ever adds `--remote-debugging-port=9222`. It never touches MiMo's f
 
 | Metric | Source |
 |---|---|
-| model / mode | `modelID`/`providerID`/`mode` of the newest main-agent message |
-| context pressure (bar + % + counts) | `tokens.total` of that message ÷ context window |
-| tokens (in ↑ / out ↓ / reasoning) | summed `tokens` buckets over every `step-finish` |
-| cache hit rate | `cacheRead ÷ (input + cacheRead + cacheWrite)` |
-| cost | sum of `step-finish.cost` (**the engine's own number** — see below) |
+| model / mode | the model chip on the left — every number on the row is **this model's** |
+| context pressure (bar + % + counts) | `tokens.total` of the newest main-agent message ÷ context window |
+| tokens (in ↑ / out ↓ / reasoning) | that model's `tokens` buckets, summed over its `step-finish` rows |
+| cache hit rate | `cacheRead ÷ (input + cacheRead + cacheWrite)` for that model |
+| cost | sum of that model's `step-finish.cost` (**the engine's own number** — see below) |
 | generation speed | output tokens ÷ actual generation time (idle time excluded) |
-| tool calls / breakdown | counts and grouping of `part` rows with `type=tool` |
-| subagents | live status and turn counts from `actor_registry` |
-| task progress | `task` rows grouped by status |
-| steps / messages / compactions / title | inside the `▾` detail panel |
+| tool calls | tool calls made on that model's steps |
+| subagents / tasks | session-level — they are not a model concept |
+| all models | tucked into the `▾` panel: one row each with a share bar, the running one marked 当前 |
+
+Usage is attributed per `provider/model` (a `step-finish` part joins the message that produced it, which carries the model id), so the same model name under two providers counts as two rows.
 
 The context bar turns amber at 75% and red at 90%; the dot on the left breathes while a subagent is running or something happened in the last 4 seconds.
 
@@ -251,7 +254,7 @@ MIT
 
 > 那个运行时其实是 MiMo 自己的 `mimo-node` 壳,不是独立 Node:它要求 `MIMO_ELECTRON_NODE_HOST` 指向 `Xiaomi MiMo.exe`,否则报 `mimo-node: MIMO_ELECTRON_NODE_HOST is not set`。`bin\_env.cmd` 会自动找到主程序并把变量设上 —— 如果 `PATH` 里有真正的 Node 也能用(那种情况会忽略这个变量)。
 
-1. 从 [Releases](https://github.com/miniongk/mimo-desktop-statusbar/releases) 下载 `mimo-desktop-statusbar-v1.0.0.zip`,解压。
+1. 从 [Releases](https://github.com/miniongk/mimo-desktop-statusbar/releases) 下载 `mimo-desktop-statusbar-v1.1.0.zip`,解压。
 2. 双击 **`mimo-statusbar\安装.cmd`**。
 3. 如果弹出「现在关闭并重启 MiMo 吗?」→ 点**是**(只有第一次,以及应用更新后需要)。
 
@@ -309,16 +312,17 @@ MiMo Desktop 带单实例锁(`out/main/index.mjs` 的 `requestSingleInstanceLock
 
 | 指标 | 来源 |
 |---|---|
-| 模型 / 模式 | 最近一条主代理消息的 `modelID`/`providerID`/`mode` |
+| 模型 / 模式 | 行首的模型胶囊 —— 这一行的数字都是**它的** |
 | 上下文占用(条+百分比+用量) | 最近一条主代理消息的 `tokens.total` ÷ 上下文窗口 |
-| token(输入↑/输出↓/思考) | 所有 `step-finish` 的 `tokens` 分桶求和 |
-| 缓存命中率 | `cacheRead ÷ (input + cacheRead + cacheWrite)` |
-| 花费 | `step-finish.cost` 求和(**引擎给的值**,不是我自己套价格表)—— 算法见下节 |
+| token(输入↑/输出↓/思考) | 该模型的 `step-finish` 里 `tokens` 分桶求和 |
+| 缓存命中率 | 该模型的 `cacheRead ÷ (input + cacheRead + cacheWrite)` |
+| 花费 | 该模型的 `step-finish.cost` 求和(**引擎给的值**,不是我自己套价格表)—— 算法见下节 |
 | 生成速度 | 输出 token ÷ 各消息实际生成耗时之和(不含等待) |
-| 工具调用数 / 分布 | `part` 里 `type=tool` 的计数与分组 |
-| 子代理 | `actor_registry` 的实时状态与轮数 |
-| 任务进度 | `task` 表按状态计数 |
-| 步数/消息数/压缩次数/会话标题 | 明细面板里,点击 `▾` 展开 |
+| 工具调用数 | 该模型的步上调用的工具次数 |
+| 子代理 / 任务 | 会话级 —— 它们不是模型概念 |
+| 全部模型 | 收在 `▾` 面板里:每个模型一行,带份额条,正在用的标「当前」 |
+
+用量按 `provider/model` 成对归因(`step-finish` 通过 `message_id` 关联到带模型 id 的消息),所以同一个模型名挂在两个 provider 下会算成两行。
 
 上下文条在 75% 变琥珀、90% 变红;有子代理在跑或最近 4 秒内有动作时,左侧圆点会呼吸。
 

@@ -17,7 +17,7 @@ const ROOT = join(HERE, "..");
 
 // Must match the VERSION constant in src/page/bar.js: a lower one on the page
 // means an older bar is installed and needs replacing.
-const BAR_VERSION = 2;
+const BAR_VERSION = 3;
 
 const DEFAULTS = {
   port: 9222,
@@ -77,10 +77,39 @@ function pct(used, window) {
 }
 
 // Turn the raw DB read into exactly what the page script renders.
+//
+// The main row is the *current model's* usage (that is the number the user is
+// asking about while a model is running); the other models are handed over
+// intact for the detail panel, where they are stacked by share.
 function toViewModel(raw, cfg) {
-  const t = raw.tokens ?? {};
-  const billedInput = (t.input ?? 0) + (t.cacheRead ?? 0) + (t.cacheWrite ?? 0);
-  const cacheable = (t.cacheRead ?? 0) + (t.cacheWrite ?? 0) + (t.input ?? 0);
+  const models = raw.models ?? [];
+  const current = models.find((m) => m.isCurrent) ?? models[0] ?? null;
+  // Fall back to the session aggregate when attribution is unavailable (no
+  // model-tagged steps yet), so the bar degrades instead of showing zeros.
+  const use = current
+    ? {
+        input: current.tokens.input,
+        output: current.tokens.output,
+        reasoning: current.tokens.reasoning,
+        cacheRead: current.tokens.cacheRead,
+        cacheWrite: current.tokens.cacheWrite,
+        steps: current.steps,
+        tools: current.tools,
+        cost: current.cost,
+      }
+    : {
+        input: raw.tokens?.input ?? 0,
+        output: raw.tokens?.output ?? 0,
+        reasoning: raw.tokens?.reasoning ?? 0,
+        cacheRead: raw.tokens?.cacheRead ?? 0,
+        cacheWrite: raw.tokens?.cacheWrite ?? 0,
+        steps: raw.tokens?.steps ?? 0,
+        tools: raw.tools?.total ?? 0,
+        cost: raw.cost?.total ?? 0,
+      };
+
+  const billedInput = use.input + use.cacheRead + use.cacheWrite;
+  const cacheable = use.cacheRead + use.cacheWrite + use.input;
   const busy =
     (raw.actors?.running ?? 0) > 0 ||
     (raw.timing?.lastAt != null && Date.now() - raw.timing.lastAt < 4000);
@@ -89,28 +118,51 @@ function toViewModel(raw, cfg) {
     at: raw.at,
     busy,
     session: { id: raw.session?.id, title: raw.session?.title },
-    model: raw.model,
+    model: {
+      ...(raw.model ?? {}),
+      isCurrent: true,
+      steps: use.steps,
+      tools: use.tools,
+      cost: use.cost,
+    },
     tokens: {
       input: billedInput,
-      output: t.output ?? 0,
-      reasoning: t.reasoning ?? 0,
-      cacheRead: t.cacheRead ?? 0,
-      cacheWrite: t.cacheWrite ?? 0,
-      steps: t.steps ?? 0,
+      output: use.output,
+      reasoning: use.reasoning,
+      cacheRead: use.cacheRead,
+      cacheWrite: use.cacheWrite,
+      steps: use.steps,
     },
-    cache: { hitRate: cacheable > 0 ? (t.cacheRead ?? 0) / cacheable : null },
+    cache: { hitRate: cacheable > 0 ? use.cacheRead / cacheable : null },
     context: {
       used: raw.context?.used ?? null,
       window: raw.context?.window ?? null,
       pct: pct(raw.context?.used, raw.context?.window),
     },
-    cost: { total: raw.cost?.total ?? 0 },
+    cost: { total: use.cost },
     speed: { tps: raw.timing?.outputTps ?? null },
     timing: { spanMs: raw.timing?.spanMs ?? 0, genMs: raw.timing?.genMs ?? 0 },
-    tools: raw.tools,
+    tools: { total: use.tools, byName: raw.tools?.byName ?? [] },
     actors: raw.actors,
     tasks: raw.tasks,
     messages: raw.messages,
+    models: models.map((m) => ({
+      providerID: m.providerID,
+      modelID: m.modelID,
+      isCurrent: m.isCurrent,
+      steps: m.steps,
+      tools: m.tools,
+      cost: m.cost,
+      share: m.share,
+      tokens: {
+        input: m.tokens.input + m.tokens.cacheRead + m.tokens.cacheWrite,
+        output: m.tokens.output,
+        reasoning: m.tokens.reasoning,
+        cacheRead: m.tokens.cacheRead,
+        total: m.tokens.total,
+      },
+    })),
+    totals: raw.totals,
   };
 }
 

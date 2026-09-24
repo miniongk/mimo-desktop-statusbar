@@ -291,6 +291,96 @@ export class Store {
 
     const running = actors.filter((a) => a.status === "running").length;
 
+    // Usage is attributable per model: step-finish parts carry no model id, but
+    // they join to the message that produced them, which does. Same join gives
+    // per-model tool counts. `provider/model` is the key — the same model name
+    // has shown up under two providers in one session.
+    const modelRows = this.#all(
+      `select json_extract(m.data,'$.providerID')  as providerID,
+              json_extract(m.data,'$.modelID')     as modelID,
+              count(*)                                                     as steps,
+              coalesce(sum(json_extract(p.data,'$.tokens.input')),0)       as input,
+              coalesce(sum(json_extract(p.data,'$.tokens.output')),0)      as output,
+              coalesce(sum(json_extract(p.data,'$.tokens.reasoning')),0)   as reasoning,
+              coalesce(sum(json_extract(p.data,'$.tokens.cache.read')),0)  as cacheRead,
+              coalesce(sum(json_extract(p.data,'$.tokens.cache.write')),0) as cacheWrite,
+              coalesce(sum(json_extract(p.data,'$.cost')),0)              as cost
+         from part p
+         join message m on m.id = p.message_id
+        where p.session_id = ?
+          and json_extract(p.data,'$.type') = 'step-finish'
+          and json_extract(m.data,'$.modelID') is not null
+        group by providerID, modelID
+        order by cost desc, input + output desc`,
+      sessionId
+    );
+
+    const toolRowsByModel = new Map(
+      this.#all(
+        `select json_extract(m.data,'$.providerID') as providerID,
+                json_extract(m.data,'$.modelID')    as modelID,
+                count(*)                            as n
+           from part p
+           join message m on m.id = p.message_id
+          where p.session_id = ?
+            and json_extract(p.data,'$.type') = 'tool'
+            and json_extract(m.data,'$.modelID') is not null
+          group by providerID, modelID`,
+        sessionId
+      ).map((r) => [`${r.providerID ?? ""}/${r.modelID ?? ""}`, r.n ?? 0])
+    );
+
+    const grandTokens =
+      modelRows.reduce((a, r) => a + (r.input ?? 0) + (r.output ?? 0) + (r.reasoning ?? 0), 0) || 1;
+
+    const models = modelRows.map((r) => {
+      const key = `${r.providerID ?? ""}/${r.modelID ?? ""}`;
+      // Match on provider AND model: the same model name has appeared under two
+      // providers in one session, and comparing names alone marks both current.
+      const isCurrent =
+        !!r.modelID &&
+        key === `${lastMsg?.providerID ?? ""}/${lastMsg?.modelID ?? ""}`;
+      return {
+        providerID: r.providerID ?? null,
+        modelID: r.modelID ?? null,
+        isCurrent,
+        steps: r.steps ?? 0,
+        tools: toolRowsByModel.get(key) ?? 0,
+        tokens: {
+          input: r.input ?? 0,
+          output: r.output ?? 0,
+          reasoning: r.reasoning ?? 0,
+          cacheRead: r.cacheRead ?? 0,
+          cacheWrite: r.cacheWrite ?? 0,
+          total: (r.input ?? 0) + (r.output ?? 0) + (r.reasoning ?? 0),
+        },
+        cost: r.cost ?? 0,
+        share: ((r.input ?? 0) + (r.output ?? 0) + (r.reasoning ?? 0)) / grandTokens,
+      };
+    });
+
+    const totals = models.reduce(
+      (acc, m) => ({
+        steps: acc.steps + m.steps,
+        tools: acc.tools + m.tools,
+        tokens: {
+          input: acc.tokens.input + m.tokens.input,
+          output: acc.tokens.output + m.tokens.output,
+          reasoning: acc.tokens.reasoning + m.tokens.reasoning,
+          cacheRead: acc.tokens.cacheRead + m.tokens.cacheRead,
+          cacheWrite: acc.tokens.cacheWrite + m.tokens.cacheWrite,
+          total: acc.tokens.total + m.tokens.total,
+        },
+        cost: acc.cost + m.cost,
+      }),
+      {
+        steps: 0,
+        tools: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        cost: 0,
+      }
+    );
+
     return {
       at: Date.now(),
       session: {
@@ -299,6 +389,8 @@ export class Store {
         directory: session.directory,
       },
       model: { providerID, modelID, mode: lastMsg?.mode ?? null, agent: lastMsg?.agent ?? null },
+      // Session-wide aggregates. The bar shows the *current model's* slice of
+      // these on the main row (see models[]); these stay the session truth.
       tokens: {
         input: steps?.input ?? 0,
         output: steps?.output ?? 0,
@@ -331,6 +423,10 @@ export class Store {
         outputTps: genMs > 0 ? (genOut / genMs) * 1000 : null,
         lastStepAt: lastMsg?.completedAt ?? null,
       },
+      // Per-model usage: main row shows the current one, the rest are tucked
+      // into the detail panel. Sorted by cost, then size.
+      models,
+      totals,
     };
   }
 }

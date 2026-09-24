@@ -140,7 +140,49 @@ insertActor.run(A, "general-1", "subagent", "done", "general", 2, "实现", 0, T
 const B = "ses_bbbbbbbbbbbb";
 insertSession.run(B, "global", "B:\\work", "空会话", T0 + 100_000, T0 + 950_000);
 
-// --- session C: only subagent traffic, no main-agent assistant row
+// --- session D: usage split across several models, including the same model
+// name under two providers. Kept separate so session A's numbers stay pinned.
+const D = "ses_dddddddddddd";
+insertSession.run(D, "global", "B:\\work", "多模型会话", T0 + 300_000, T0 + 310_000);
+// Newest message decides the "current" model: deepseek-flash.
+insertMsg.run("m-d-2", D, "main", T0 + 302_000, T0 + 302_500, JSON.stringify({
+  role: "assistant", modelID: "deepseek-flash", providerID: "deepseek",
+  tokens: { total: 9000, output: 400 },
+  time: { created: T0 + 302_000, completed: T0 + 302_500 },
+}));
+insertPart.run("p-d-2", "m-d-2", D, T0 + 302_000, JSON.stringify({
+  type: "step-finish", reason: "tool-calls",
+  tokens: { total: 9000, input: 400, output: 300, reasoning: 50, cache: { read: 3000, write: 0 } },
+  cost: 0.02,
+}));
+insertPart.run("p-d-tool-2", "m-d-2", D, T0 + 302_100,
+  JSON.stringify({ type: "tool", tool: "bash", state: { status: "completed" } }));
+
+// A different model earlier in the session.
+insertMsg.run("m-d-1", D, "main", T0 + 301_000, T0 + 301_400, JSON.stringify({
+  role: "assistant", modelID: "mimo-v2.6-pro", providerID: "mimo-desktop",
+  tokens: { total: 2000, output: 300 },
+  time: { created: T0 + 301_000, completed: T0 + 301_400 },
+}));
+insertPart.run("p-d-1", "m-d-1", D, T0 + 301_000, JSON.stringify({
+  type: "step-finish", reason: "tool-calls",
+  tokens: { total: 5000, input: 700, output: 300, reasoning: 50, cache: { read: 3000, write: 0 } },
+  cost: 0.02,
+}));
+insertPart.run("p-d-tool-1", "m-d-1", D, T0 + 301_100,
+  JSON.stringify({ type: "tool", tool: "bash", state: { status: "completed" } }));
+
+// Same model NAME under a second provider — must not be marked current.
+insertMsg.run("m-d-0", D, "main", T0 + 300_500, T0 + 300_600, JSON.stringify({
+  role: "assistant", modelID: "mimo-v2.6-pro", providerID: "xiaomi",
+  tokens: { total: 100, output: 10 },
+  time: { created: T0 + 300_500, completed: T0 + 300_600 },
+}));
+insertPart.run("p-d-0", "m-d-0", D, T0 + 300_500, JSON.stringify({
+  type: "step-finish", reason: "text",
+  tokens: { total: 1000, input: 400, output: 20, reasoning: 0, cache: { read: 0, write: 0 } },
+  cost: 0.004,
+}));
 const C = "ses_cccccccccccc";
 insertSession.run(C, "global", "B:\\work", "只有子代理", T0 + 200_000, T0 + 205_000);
 insertMsg.run(
@@ -204,6 +246,34 @@ try {
   eq("只有子代理时模式为空", c.model.mode, null);
 
   check("查不到的会话返回 null", store.sessionStats("ses_nope") === null);
+
+  // --- per-model attribution (session D) ---------------------------------
+  const d = store.sessionStats(D);
+  eq("按 provider/model 拆出 3 个模型", d.models.length, 3);
+  eq("恰好一个模型标为当前", d.models.filter((m) => m.isCurrent).length, 1);
+  const curModel = d.models.find((m) => m.isCurrent);
+  eq("当前模型是最近主代理消息用的那个", [curModel.providerID, curModel.modelID], ["deepseek", "deepseek-flash"]);
+  eq("当前模型的步数", curModel.steps, 1);
+  eq("当前模型的输出 token", curModel.tokens.output, 300);
+  eq("当前模型的工具调用", curModel.tools, 1);
+  eq("当前模型的费用", curModel.cost, 0.02);
+
+  const other = d.models.find((m) => m.modelID === "mimo-v2.6-pro" && m.providerID === "mimo-desktop");
+  eq("另一模型的步数", other.steps, 1);
+  eq("另一模型的输入 token", other.tokens.input, 700);
+  eq("另一模型的费用", other.cost, 0.02);
+
+  // Same model name under two providers must be two rows, only one current.
+  const twins = d.models.filter((m) => m.modelID === "mimo-v2.6-pro");
+  eq("同名不同 provider 拆成两行", twins.length, 2);
+  eq("同名两行都不得标当前", twins.filter((m) => m.isCurrent).length, 0);
+
+  const shareSum = d.models.reduce((s, m) => s + m.share, 0);
+  check("份额之和约为 1", Math.abs(shareSum - 1) < 1e-9, String(shareSum));
+  eq("会话总步数 = 各模型之和", d.totals.steps, d.models.reduce((s, m) => s + m.steps, 0));
+  eq("会话总工具 = 各模型之和", d.totals.tools, d.models.reduce((s, m) => s + m.tools, 0));
+  eq("会话总费用 = 各模型之和", d.totals.cost, d.models.reduce((s, m) => s + m.cost, 0));
+  check("份额按大小排在前面的模型费用更高", d.models[0].cost >= d.models[d.models.length - 1].cost);
 
   // Context window comes from the local model catalog when available; an
   // override must always win.

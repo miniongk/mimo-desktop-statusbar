@@ -1,7 +1,14 @@
 // Runs inside the MiMo Desktop renderer. Injected once per page load by
 // src/inject.mjs, then fed state over CDP. Defines window.__mimoStatsBar.
+//
+// Design: an instrument cluster rather than a terminal readout. Metric pills
+// (soft stadium chips) group by meaning; the model chip leads because every
+// number on the row is that model's. Numbers are tabular mono so they do not
+// jitter, labels are small and dim. Other models are stacked by share inside
+// the detail panel instead of crowding the row.
+
 (() => {
-  const VERSION = 2;
+  const VERSION = 3;
   // Re-injecting is how the injector upgrades an older instance; only bail out
   // if what is already there is at least this new.
   if (window.__mimoStatsBar && window.__mimoStatsBar.version >= VERSION) return;
@@ -13,93 +20,164 @@
   const CSS = `
 #${HOST_ID} {
   --msb-fg: var(--color-composer-fg, #8b8b93);
-  --msb-dim: color-mix(in srgb, var(--msb-fg) 62%, transparent);
-  --msb-faint: color-mix(in srgb, var(--msb-fg) 38%, transparent);
+  --msb-dim: color-mix(in srgb, var(--msb-fg) 78%, transparent);
+  --msb-faint: color-mix(in srgb, var(--msb-fg) 48%, transparent);
+  --msb-pill: color-mix(in srgb, var(--msb-fg) 9%, transparent);
+  --msb-pill-hi: color-mix(in srgb, var(--msb-fg) 15%, transparent);
   --msb-line: color-mix(in srgb, var(--msb-fg) 16%, transparent);
   --msb-ok: #3fb950;
   --msb-warn: #d29922;
   --msb-hot: #f85149;
-  margin: 6px auto 0;
+  margin: 7px auto 0;
+  width: fit-content;
   max-width: 100%;
-  font: 11px/1.5 ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  font-variant-numeric: tabular-nums;
   color: var(--msb-fg);
-  opacity: .78;
+  font: 11px/1.4 -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  opacity: .82;
   transition: opacity .18s ease;
   user-select: none;
 }
 #${HOST_ID}:hover { opacity: 1; }
+
 #${HOST_ID} .msb-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 4px 9px;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
+  gap: 5px;
 }
-#${HOST_ID} .msb-seg { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
-#${HOST_ID} .msb-k { color: var(--msb-faint); }
-#${HOST_ID} .msb-v { color: var(--msb-fg); }
-#${HOST_ID} .msb-u { color: var(--msb-dim); }
-#${HOST_ID} .msb-sep {
-  width: 1px; height: 10px;
-  background: var(--msb-line);
-  flex: 0 0 auto;
+#${HOST_ID} .msb-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 22px; padding: 0 9px;
+  border-radius: 999px;
+  background: var(--msb-pill);
+  white-space: nowrap;
 }
-#${HOST_ID}[data-state="idle"] .msb-live { opacity: 0; }
-#${HOST_ID} .msb-live {
+#${HOST_ID} .msb-k {
+  font-size: 10px; letter-spacing: .02em;
+  color: var(--msb-faint);
+}
+#${HOST_ID} .msb-v {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  font-size: 11px;
+  color: var(--msb-fg);
+}
+#${HOST_ID} .msb-u { font-size: 10px; color: var(--msb-dim); }
+/* label/value pair used inside the panel and footer — keeps them from touching */
+#${HOST_ID} .msb-seg { display: inline-flex; align-items: baseline; gap: 4px; }
+
+/* identity pill: a tag, not a chip — it names what the row is about */
+#${HOST_ID} .msb-model {
+  border: 1px solid var(--msb-line);
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  padding: 0 10px;
+}
+#${HOST_ID} .msb-model:hover { background: var(--msb-pill-hi); }
+#${HOST_ID} .msb-model-name {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11px; font-weight: 500; color: var(--msb-fg);
+}
+#${HOST_ID} .msb-model-mode { font-size: 10px; color: var(--msb-faint); }
+
+#${HOST_ID} .msb-dot {
   width: 6px; height: 6px; border-radius: 50%;
-  background: var(--msb-ok);
-  flex: 0 0 auto;
+  background: var(--msb-ok); flex: 0 0 auto;
   transition: opacity .18s ease;
 }
-#${HOST_ID}[data-state="busy"] .msb-live { animation: msb-pulse 1.1s ease-in-out infinite; }
+#${HOST_ID}[data-state="idle"] .msb-dot { opacity: 0; }
+#${HOST_ID}[data-state="busy"] .msb-dot { animation: msb-pulse 1.1s ease-in-out infinite; }
 @keyframes msb-pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: .35; transform: scale(.72); }
 }
+
 #${HOST_ID} .msb-track {
-  display: inline-block;
-  width: 46px; height: 3px;
-  border-radius: 2px;
+  display: inline-block; width: 44px; height: 3px;
+  border-radius: 2px; overflow: hidden;
   background: var(--msb-line);
-  overflow: hidden;
-  flex: 0 0 auto;
 }
 #${HOST_ID} .msb-track > i {
-  display: block; height: 100%;
-  border-radius: 2px;
+  display: block; height: 100%; border-radius: 2px;
   background: var(--msb-ok);
   transition: width .35s ease, background .35s ease;
 }
 #${HOST_ID}[data-ctx="warn"] .msb-track > i { background: var(--msb-warn); }
-#${HOST_ID}[data-ctx="hot"] .msb-track > i { background: var(--msb-hot); }
+#${HOST_ID}[data-ctx="hot"]  .msb-track > i { background: var(--msb-hot); }
 #${HOST_ID}[data-ctx="warn"] .msb-ctx .msb-v { color: var(--msb-warn); }
-#${HOST_ID}[data-ctx="hot"] .msb-ctx .msb-v { color: var(--msb-hot); }
+#${HOST_ID}[data-ctx="hot"]  .msb-ctx .msb-v { color: var(--msb-hot); }
+
 #${HOST_ID} .msb-more {
-  cursor: pointer;
+  cursor: pointer; border: 0; padding: 0 2px 0 0;
+  background: none; font: inherit; line-height: 1;
   color: var(--msb-faint);
-  background: none; border: 0; padding: 0 2px;
-  font: inherit; line-height: 1;
 }
 #${HOST_ID} .msb-more:hover { color: var(--msb-fg); }
+
+/* detail: per-model rows with a share bar each — the other models live here */
 #${HOST_ID} .msb-panel {
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px solid var(--msb-line);
   display: none;
-  text-align: center;
+  margin-top: 6px; padding: 8px 10px 6px;
+  border: 1px solid var(--msb-line);
+  border-radius: 10px;
+  min-width: 320px;
 }
 #${HOST_ID}[data-expanded="1"] .msb-panel { display: block; }
-#${HOST_ID} .msb-panel .msb-row + .msb-row { margin-top: 3px; }
-#${HOST_ID} .msb-tool { color: var(--msb-dim); }
-#${HOST_ID} .msb-empty { color: var(--msb-faint); }
+#${HOST_ID} .msb-panel-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin-bottom: 6px;
+}
+#${HOST_ID} .msb-panel-title {
+  font-size: 10px; letter-spacing: .04em; color: var(--msb-faint);
+}
+#${HOST_ID} .msb-mrow {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) 74px 64px 64px 52px;
+  align-items: center; gap: 10px;
+  padding: 3px 0;
+  font-variant-numeric: tabular-nums;
+}
+#${HOST_ID} .msb-mrow + .msb-mrow { border-top: 1px solid var(--msb-line); }
+/* numeric columns right-align so rows line up down the panel */
+#${HOST_ID} .msb-cell {
+  display: inline-flex; align-items: baseline; justify-content: flex-end;
+  gap: 5px;
+}
+#${HOST_ID} .msb-share {
+  display: block; height: 3px; border-radius: 2px;
+  background: var(--msb-line); overflow: hidden;
+}
+#${HOST_ID} .msb-share > i {
+  display: block; height: 100%; border-radius: 2px;
+  background: var(--msb-faint);
+}
+#${HOST_ID} .msb-mrow[data-current="1"] .msb-share > i { background: var(--msb-ok); }
+#${HOST_ID} .msb-mname {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11px; color: var(--msb-dim);
+  overflow: hidden; text-overflow: ellipsis;
+}
+#${HOST_ID} .msb-mrow[data-current="1"] .msb-mname { color: var(--msb-fg); }
+#${HOST_ID} .msb-tag {
+  margin-left: 5px; padding: 0 5px; border-radius: 999px;
+  background: var(--msb-pill-hi); color: var(--msb-fg);
+  font-family: inherit; font-size: 9px;
+}
+#${HOST_ID} .msb-foot {
+  margin-top: 6px; padding-top: 6px;
+  border-top: 1px solid var(--msb-line);
+  display: flex; flex-wrap: wrap; gap: 4px 14px;
+  font-size: 10px; color: var(--msb-faint);
+}
+#${HOST_ID} .msb-foot b {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500; color: var(--msb-dim);
+}
 `;
 
   const fmt = {
-    int(n) {
-      if (n == null) return "—";
-      return String(Math.round(n));
-    },
     // Compact but unambiguous: 999, 12.4k, 1M, 10.65M
     tok(n) {
       if (n == null) return "—";
@@ -140,31 +218,19 @@
     return n;
   }
 
-  function seg(label, value, extra) {
-    const s = el("span", "msb-seg");
-    if (label) s.appendChild(el("span", "msb-k", label));
-    if (value != null) s.appendChild(el("span", "msb-v", value));
-    if (extra) s.appendChild(el("span", "msb-u", extra));
-    return s;
-  }
-
-  function sep() {
-    return el("span", "msb-sep");
-  }
-
-  function parse(v) {
-    try {
-      return JSON.parse(v);
-    } catch {
-      return null;
-    }
+  // A label/value pair inside a pill: "cache 97%"
+  function pill(label, value, extra, cls = "") {
+    const p = el("span", "msb-pill" + (cls ? " " + cls : ""));
+    if (label) p.appendChild(el("span", "msb-k", label));
+    if (value != null) p.appendChild(el("span", "msb-v", value));
+    if (extra) p.appendChild(el("span", "msb-u", extra));
+    return p;
   }
 
   // The renderer mounts the composer in two variants: `dock` (inside a
   // conversation, carries the `composer-dock` id) and `home` (the new-task page,
   // `composer-home` class, no id). Only a docked composer means there is a
-  // conversation behind it — sitting on the new-task page must not report the
-  // previous conversation's numbers.
+  // conversation behind it.
   function isConversationView() {
     const dock = document.getElementById("composer-dock");
     if (!dock) return false;
@@ -175,93 +241,53 @@
 
   function buildRow(s) {
     const row = el("div", "msb-row");
-    row.appendChild(el("span", "msb-live"));
+    row.appendChild(el("span", "msb-dot"));
 
-    // New-task page: there is nothing to count yet. Saying so is better than
-    // leaving the previous conversation's numbers on screen.
     if (s.empty) {
-      row.appendChild(el("span", "msb-seg msb-empty", "新对话 · 还没有数据"));
+      row.appendChild(el("span", "msb-pill msb-k", "新对话 · 还没有数据"));
       return row;
     }
 
-    // Identity leads: it is the one thing that stays put while numbers churn,
-    // and keeping it first stops it from dangling alone on a wrapped line.
-    if (s.model?.modelID) {
-      const m = el("span", "msb-seg");
-      m.appendChild(
-        el("span", "msb-v", `${s.model.providerID ?? ""}/${s.model.modelID}`.replace(/^\//, ""))
-      );
-      if (s.model.mode) m.appendChild(el("span", "msb-u", s.model.mode));
-      row.appendChild(m);
-      row.appendChild(sep());
-    }
+    // Identity leads: everything after it is this model's numbers.
+    const model = el("button", "msb-pill msb-model");
+    model.type = "button";
+    model.title = "展开模型明细";
+    model.appendChild(
+      el("span", "msb-model-name", `${s.model?.providerID ?? ""}/${s.model?.modelID ?? ""}`.replace(/^\//, "") || "—")
+    );
+    if (s.model?.mode) model.appendChild(el("span", "msb-model-mode", s.model.mode));
+    model.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleExpanded();
+    });
+    row.appendChild(model);
 
-    // Context pressure next: it is the number that changes the user's behaviour.
     if (s.context) {
-      const c = el("span", "msb-seg msb-ctx");
-      c.appendChild(el("span", "msb-k", "ctx"));
+      const c = el("span", "msb-pill msb-ctx");
       const track = el("span", "msb-track");
       const fill = el("i");
-      const pct = s.context.pct;
-      fill.style.width = (pct == null ? 0 : Math.max(1.5, Math.min(100, pct))) + "%";
+      const p = s.context.pct;
+      fill.style.width = (p == null ? 0 : Math.max(1.5, Math.min(100, p))) + "%";
       track.appendChild(fill);
       c.appendChild(track);
-      c.appendChild(el("span", "msb-v", fmt.pct(pct)));
+      c.appendChild(el("span", "msb-v", fmt.pct(p)));
       if (s.context.used != null && s.context.window != null) {
-        c.appendChild(
-          el("span", "msb-u", `${fmt.tok(s.context.used)}/${fmt.tok(s.context.window)}`)
-        );
+        c.appendChild(el("span", "msb-u", `${fmt.tok(s.context.used)}/${fmt.tok(s.context.window)}`));
       }
       row.appendChild(c);
-      row.appendChild(sep());
     }
 
-    row.appendChild(
-      seg("tok", `${fmt.tok(s.tokens?.input)}↑ ${fmt.tok(s.tokens?.output)}↓`, s.tokens?.reasoning ? `+${fmt.tok(s.tokens.reasoning)}思` : null)
-    );
+    row.appendChild(pill("in", fmt.tok(s.tokens?.input)));
+    row.appendChild(pill("out", fmt.tok(s.tokens?.output), s.tokens?.reasoning ? `+${fmt.tok(s.tokens.reasoning)}` : null));
+    if (s.cache?.hitRate != null) row.appendChild(pill("cache", fmt.pct(s.cache.hitRate * 100)));
+    if (s.cost) row.appendChild(pill(null, fmt.cost(s.cost.total)));
+    if (s.speed?.tps != null) row.appendChild(pill(null, fmt.tok(s.speed.tps) + "/s"));
+    else if (s.timing?.spanMs) row.appendChild(pill(null, fmt.dur(s.timing.spanMs)));
 
-    if (s.cache?.hitRate != null) {
-      row.appendChild(sep());
-      row.appendChild(seg("cache", fmt.pct(s.cache.hitRate * 100)));
-    }
-
-    if (s.cost) {
-      row.appendChild(sep());
-      row.appendChild(seg(null, fmt.cost(s.cost.total)));
-    }
-
-    if (s.speed?.tps != null) {
-      row.appendChild(sep());
-      row.appendChild(seg(null, fmt.tok(s.speed.tps) + " tok/s"));
-    } else if (s.timing?.spanMs) {
-      row.appendChild(sep());
-      row.appendChild(seg(null, fmt.dur(s.timing.spanMs)));
-    }
-
-    row.appendChild(sep());
-    const tools = el("span", "msb-seg");
-    tools.appendChild(el("span", "msb-k", "tool"));
-    tools.appendChild(el("span", "msb-v", String(s.tools?.total ?? 0)));
-    row.appendChild(tools);
-
-    if (s.actors?.total) {
-      row.appendChild(sep());
-      const a = el("span", "msb-seg");
-      a.appendChild(el("span", "msb-k", "agent"));
-      a.appendChild(el("span", "msb-v", `${s.actors.running || 0}/${s.actors.total}`));
-      row.appendChild(a);
-    }
-
-    if (s.tasks?.total) {
-      row.appendChild(sep());
-      const t = el("span", "msb-seg");
-      t.appendChild(el("span", "msb-k", "task"));
-      t.appendChild(el("span", "msb-v", `${s.tasks.done}/${s.tasks.total}`));
-      if (s.tasks.inProgress) {
-        t.appendChild(el("span", "msb-u", `跑${s.tasks.inProgress}`));
-      }
-      row.appendChild(t);
-    }
+    row.appendChild(pill("tool", String(s.tools?.total ?? 0)));
+    if (s.actors?.total) row.appendChild(pill("agent", `${s.actors.running || 0}/${s.actors.total}`));
+    if (s.tasks?.total) row.appendChild(pill("task", `${s.tasks.done}/${s.tasks.total}`));
 
     const more = el("button", "msb-more", "▾");
     more.type = "button";
@@ -275,64 +301,92 @@
     return row;
   }
 
+  // One row per model, stacked by share of total tokens. This is where the
+  // models that are not running go.
+  function modelRow(m, maxShare) {
+    const r = el("div", "msb-mrow");
+    r.dataset.current = m.isCurrent ? "1" : "0";
+
+    const share = el("span", "msb-share");
+    const fill = el("i");
+    fill.style.width = Math.max(2, Math.round((m.share / (maxShare || 1)) * 100)) + "%";
+    share.appendChild(fill);
+    r.appendChild(share);
+
+    const name = el("span", "msb-mname");
+    name.textContent = `${m.providerID ?? ""}/${m.modelID ?? ""}`.replace(/^\//, "") || "—";
+    if (m.isCurrent) name.appendChild(el("span", "msb-tag", "当前"));
+    r.appendChild(name);
+
+    const pair = (k, v) => {
+      const s2 = el("span", "msb-cell");
+      s2.appendChild(el("span", "msb-k", k));
+      s2.appendChild(el("span", "msb-v", v));
+      return s2;
+    };
+    r.appendChild(pair("in", fmt.tok(m.tokens.input)));
+    r.appendChild(pair("out", fmt.tok(m.tokens.output)));
+    r.appendChild(pair("$", fmt.cost(m.cost)));
+    r.appendChild(pair("步", String(m.steps)));
+    return r;
+  }
+
   function buildPanel(s) {
     const panel = el("div", "msb-panel");
     if (s.empty) return panel;
 
-    const r1 = el("div", "msb-row");
-    if (s.tools?.byName?.length) {
-      for (const t of s.tools.byName) {
-        const x = el("span", "msb-seg");
-        x.appendChild(el("span", "msb-k", t.tool));
-        x.appendChild(el("span", "msb-v", String(t.n)));
-        r1.appendChild(x);
-      }
-    } else {
-      r1.appendChild(el("span", "msb-empty", "本会话还没有工具调用"));
-    }
-    panel.appendChild(r1);
+    const models = s.models ?? [];
+    if (models.length) {
+      const head = el("div", "msb-panel-head");
+      head.appendChild(el("span", "msb-panel-title", `模型用量 · ${models.length}`));
+      head.appendChild(
+        el("span", "msb-panel-title", `合计 ${fmt.tok(s.totals?.tokens?.total)} · ${fmt.cost(s.totals?.cost)}`)
+      );
+      panel.appendChild(head);
 
-    const r2 = el("div", "msb-row");
-    const bits = [
-      ["步", String(s.tokens?.steps ?? 0)],
-      ["消息", String(s.messages?.total ?? 0)],
-    ];
-    if (s.messages?.compacted) bits.push(["压缩", String(s.messages.compacted)]);
-    if (s.tokens?.cacheRead) bits.push(["缓存读", fmt.tok(s.tokens.cacheRead)]);
-    if (s.tokens?.cacheWrite) bits.push(["缓存写", fmt.tok(s.tokens.cacheWrite)]);
-    if (s.timing?.genMs) bits.push(["生成", fmt.dur(s.timing.genMs)]);
-    for (const [k, v] of bits) {
-      const x = el("span", "msb-seg");
-      x.appendChild(el("span", "msb-k", k));
-      x.appendChild(el("span", "msb-v", v));
-      r2.appendChild(x);
+      const maxShare = Math.max(...models.map((m) => m.share || 0), 0.0001);
+      for (const m of models) panel.appendChild(modelRow(m, maxShare));
     }
-    if (s.session?.title) r2.appendChild(el("span", "msb-tool", s.session.title));
-    panel.appendChild(r2);
+
+    const foot = el("div", "msb-foot");
+    const bit = (k, v) => {
+      const s2 = el("span", "msb-seg");
+      s2.appendChild(el("span", "msb-k", k));
+      s2.appendChild(el("span", "msb-v", v));
+      return s2;
+    };
+    foot.appendChild(bit("会话工具", String(s.totals?.tools ?? s.tools?.total ?? 0)));    if (s.tools?.byName?.length) {
+      foot.appendChild(
+        el("span", "msb-k", s.tools.byName.map((t) => `${t.tool} ${t.n}`).join(" · "))
+      );
+    }
+    foot.appendChild(bit("步", String(s.totals?.steps ?? s.tokens?.steps ?? 0)));
+    foot.appendChild(bit("消息", String(s.messages?.total ?? 0)));
+    if (s.messages?.compacted) foot.appendChild(bit("压缩", String(s.messages.compacted)));
+    if (s.timing?.genMs) foot.appendChild(bit("生成", fmt.dur(s.timing.genMs)));
+    if (s.session?.title) {
+      const t = el("span", "msb-k");
+      t.textContent = s.session.title;
+      t.style.flex = "1 1 100%";
+      t.style.textAlign = "center";
+      foot.appendChild(t);
+    }
+    panel.appendChild(foot);
 
     if (s.actors?.list?.length) {
-      const r3 = el("div", "msb-row");
+      const r = el("div", "msb-foot");
       for (const a of s.actors.list) {
-        const x = el("span", "msb-seg");
-        x.appendChild(el("span", "msb-k", `${a.agent}#${a.id}`));
-        x.appendChild(el("span", "msb-v", a.status));
-        x.appendChild(el("span", "msb-u", `${a.turns}轮`));
-        r3.appendChild(x);
+        r.appendChild(el("span", "msb-k", `${a.agent}#${a.id} ${a.status} · ${a.turns}轮`));
       }
-      panel.appendChild(r3);
+      panel.appendChild(r);
     }
-
     if (s.tasks?.list?.length) {
-      const r4 = el("div", "msb-row");
+      const r = el("div", "msb-foot");
       for (const t of s.tasks.list) {
-        const x = el("span", "msb-seg");
-        x.appendChild(el("span", "msb-k", t.id));
-        x.appendChild(el("span", "msb-v", t.status));
-        r4.appendChild(x);
+        r.appendChild(el("span", "msb-k", `${t.id} ${t.status}`));
       }
-      panel.appendChild(r4);
+      panel.appendChild(r);
     }
-
     return panel;
   }
 
@@ -358,9 +412,7 @@
 
   function findSlot() {
     const wrap = document.querySelector(".composer-wrap");
-    if (wrap) {
-      return { parent: wrap, before: wrap.querySelector(".composer-ai-disclaimer") };
-    }
+    if (wrap) return { parent: wrap, before: wrap.querySelector(".composer-ai-disclaimer") };
     const dock = document.querySelector(".composer-dock-zone");
     if (dock) return { parent: dock, before: null };
     return null;
@@ -379,9 +431,9 @@
   let watchdog = null;
   let staleMs = 10000;
 
-  // If the injector dies (crash, hard kill, detached console) nothing arrives to
-  // tear the bar down. A bar frozen on stale numbers is worse than no bar, so it
-  // removes itself once the feed goes quiet.
+  // If the injector dies, nothing arrives to tear the bar down. A bar frozen on
+  // stale numbers is worse than no bar, so it removes itself once the feed goes
+  // quiet.
   function startWatchdog() {
     if (watchdog) return;
     watchdog = setInterval(() => {
@@ -400,8 +452,6 @@
     if (!slot) return false;
     ensureStyle();
     let host = document.getElementById(HOST_ID);
-    // The composer subtree is rebuilt on route and session switches; re-attach
-    // whenever our node has been orphaned.
     if (host && host.parentNode !== slot.parent) {
       host.remove();
       host = null;
@@ -429,11 +479,8 @@
     const pct = state.context?.pct;
     host.dataset.ctx = pct == null ? "ok" : pct >= 90 ? "hot" : pct >= 75 ? "warn" : "ok";
 
-    const row = host.querySelector(":scope > .msb-row");
-    if (row) row.remove();
-    const panel = host.querySelector(":scope > .msb-panel");
-    if (panel) panel.remove();
-
+    host.querySelector(":scope > .msb-row")?.remove();
+    host.querySelector(":scope > .msb-panel")?.remove();
     host.appendChild(buildRow(state));
     host.appendChild(buildPanel(state));
 

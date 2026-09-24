@@ -65,6 +65,45 @@ const SAMPLE = {
     ],
   },
   messages: { total: 111, compacted: 1 },
+  // Multi-model: the row shows the current one, the rest are stacked in the panel.
+  models: [
+    {
+      providerID: "deepseek",
+      modelID: "deepseek-flash",
+      isCurrent: true,
+      steps: 103,
+      tools: 184,
+      cost: 0.187185546,
+      share: 0.72,
+      tokens: { input: 11290435, output: 59365, reasoning: 37932, cacheRead: 10645632, total: 11387732 },
+    },
+    {
+      providerID: "mimo-desktop",
+      modelID: "mimo-v2.6-pro",
+      isCurrent: false,
+      steps: 53,
+      tools: 76,
+      cost: 0.429955653,
+      share: 0.22,
+      tokens: { input: 586353, output: 43135, reasoning: 34980, cacheRead: 29498496, total: 664468 },
+    },
+    {
+      providerID: "xiaomi",
+      modelID: "mimo-x-flash-preview",
+      isCurrent: false,
+      steps: 34,
+      tools: 45,
+      cost: 0,
+      share: 0.06,
+      tokens: { input: 474356, output: 35352, reasoning: 0, cacheRead: 14031488, total: 509708 },
+    },
+  ],
+  totals: {
+    steps: 190,
+    tools: 305,
+    tokens: { input: 12351144, output: 137852, reasoning: 72912, cacheRead: 54185616, total: 12561908 },
+    cost: 0.6171412,
+  },
 };
 
 const HOT = JSON.parse(JSON.stringify(SAMPLE));
@@ -151,10 +190,15 @@ try {
   check("显示 token 用量", /11\.29M/.test(text) && /59k/.test(text));
   check("显示缓存命中率", /94%/.test(text));
   check("显示费用", text.includes("$0.187"));
-  check("显示生成速度", /42 tok\/s/.test(text));
+  check("显示生成速度", /42\/s/.test(text));
   check("显示工具调用数与子代理", text.includes("184") && text.includes("2/2"));
   check("显示任务进度", text.includes("2/5"));
-  check("显示模型与模式", /deepseek\/deepseek-flash/.test(text) && /build/.test(text));
+  check("显示当前模型与模式", /deepseek-flash/.test(text) && /build/.test(text));
+  check(
+    "主行只出现当前模型(其他模型不在主行)",
+    text.includes("deepseek-flash") && !text.includes("mimo-v2.6-pro"),
+    text
+  );
 
   await cdp.eval("window.__mimoStatsBar.update(" + JSON.stringify(HOT) + ")");
   const ctxAttr = await cdp.eval("document.getElementById('mimo-statusbar-host').dataset.ctx");
@@ -169,9 +213,24 @@ try {
     "document.querySelector('#mimo-statusbar-host .msb-panel').innerText.replace(/\\n/g,' | ')"
   );
   console.log("      明细面板:", panelText);
-  check("明细含工具分布", panelText.includes("bash"));
+  check("明细含每个模型一行", panelText.includes("deepseek-flash") && panelText.includes("mimo-v2.6-pro") && panelText.includes("mimo-x-flash-preview"));
+  check("明细标出当前模型", /当前/.test(panelText));
+  check("明细含会话工具分布", panelText.includes("bash"));
   check("明细含子代理状态", panelText.includes("explore-1") && panelText.includes("running"));
   check("明细含任务清单", panelText.includes("T3") && panelText.includes("in_progress"));
+  const modelRows = await cdp.eval(
+    "document.querySelectorAll('#mimo-statusbar-host .msb-mrow').length"
+  );
+  check("模型行数 = 模型数", modelRows === 3, String(modelRows));
+  const currentTagged = await cdp.eval(
+    "document.querySelectorAll('#mimo-statusbar-host .msb-mrow[data-current=\\\"1\\\"]').length"
+  );
+  check("恰好一行标为当前模型", currentTagged === 1, String(currentTagged));
+  const shareWidths = await cdp.eval(
+    "[...document.querySelectorAll('#mimo-statusbar-host .msb-share > i')].map(n => n.style.width)"
+  );
+  console.log("      份额条宽度:", JSON.stringify(shareWidths));
+  check("份额条按占比递减", shareWidths.length === 3, JSON.stringify(shareWidths));
 
   // The composer subtree is rebuilt on route/session switches; the bar must come
   // back on the next tick instead of vanishing.
@@ -210,7 +269,7 @@ try {
   // ---- new-task page handling -------------------------------------------
   check(
     "版本号已暴露(供注入器判断是否需要升级)",
-    (await cdp.eval("window.__mimoStatsBar.version")) === 2
+    (await cdp.eval("window.__mimoStatsBar.version")) === 3
   );
   check(
     "挂载在对话里的 composer 上时判定为对话视图",
@@ -306,6 +365,34 @@ try {
     Buffer.from(expandedShot.data, "base64")
   );
 
+  // Deterministic re-capture of the three previews. Set the state instead of
+  // toggling it — the assertions above toggle too, and their order leaks in.
+  const shot = async (file, { expanded: want, dark }) => {
+    await cdp.eval(`document.documentElement.dataset.theme=${JSON.stringify(dark ? "dark" : "light")}`);
+    await cdp.eval(`(() => {
+      const h = document.getElementById('mimo-statusbar-host');
+      if (!h) return;
+      h.dataset.expanded = ${want ? "'1'" : "'0'"};
+      const b = h.querySelector('.msb-more');
+      if (b) b.textContent = ${want ? "'▴'" : "'▾'"};
+    })()`);
+    await sleep(450);
+    const box = await cdp.eval(`(() => {
+      const r = document.querySelector('.composer-dock-zone').getBoundingClientRect();
+      const pad = 10;
+      return {
+        x: Math.max(0, r.left - pad), y: Math.max(0, r.top - pad),
+        width: Math.min(window.innerWidth - Math.max(0, r.left - pad), r.width + pad * 2),
+        height: r.height + pad * 2, scale: 2,
+      };
+    })()`);
+    const png = await cdp.send("Page.captureScreenshot", { format: "png", clip: box });
+    writeFileSync(join(HERE, file), Buffer.from(png.data, "base64"));
+  };
+  await cdp.eval("window.__mimoStatsBar.update(" + JSON.stringify(SAMPLE) + ")");
+  await shot("preview-light.png", { expanded: false, dark: false });
+  await shot("preview-darktheme.png", { expanded: false, dark: true });
+  await shot("preview-expanded.png", { expanded: true, dark: true });
   check("三张预览图已写出", true);
   cdp.close();
 } catch (err) {
