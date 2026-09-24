@@ -21,6 +21,10 @@ const CATALOG_CANDIDATES = [
   join(process.env.APPDATA ?? "", "ai.mimo.desktop.dev", "models-with-claude.json"),
 ];
 
+// How many recent completed turns feed the tok/s pill. Long enough to smooth
+// one short step, short enough that the number tracks the model in use now.
+const SPEED_WINDOW = 8;
+
 export function defaultDbPath() {
   return process.env.MIMOCODE_DB || DEFAULT_DB;
 }
@@ -268,26 +272,35 @@ export class Store {
       sessionId
     );
 
-    // Generation speed: sum the completed-message durations rather than wall
-    // clock, so idle time between turns doesn't drag tok/s toward zero.
-    const gen = this.#one(
-      `select
-         coalesce(sum(json_extract(data,'$.time.completed')
-                    - json_extract(data,'$.time.created')),0) as ms,
-         coalesce(sum(json_extract(data,'$.tokens.output')),0)    as out
-       from message
-      where session_id = ?
-        and json_extract(data,'$.time.completed') is not null`,
+    // Per-turn payload: generated tokens and how long the turn ran. Idle time
+    // between turns is excluded. Speed then uses only a short recent window —
+    // a session-lifetime average is poisoned by interrupted turns that record
+    // a multi-day duration with zero tokens (observed: 42h / 0 tok → ~2/s).
+    const turnRows = this.#all(
+      `select json_extract(data,'$.time.created')    as created,
+              json_extract(data,'$.time.completed')  as completed,
+              coalesce(json_extract(data,'$.tokens.output'),0)
+                + coalesce(json_extract(data,'$.tokens.reasoning'),0) as gen
+         from message
+        where session_id = ?
+          and json_extract(data,'$.role') = 'assistant'
+          and json_extract(data,'$.time.completed') is not null
+        order by time_created desc`,
       sessionId
     );
+    const validTurns = turnRows.filter((r) => r.gen > 0 && r.completed > r.created);
+    // Footer「生成」: whole-session generation time, zombies excluded.
+    const genMs = validTurns.reduce((a, r) => a + (r.completed - r.created), 0);
+    // Row speed: most recent turns only (newest first in turnRows).
+    const recent = validTurns.slice(0, SPEED_WINDOW);
+    const speedMs = recent.reduce((a, r) => a + (r.completed - r.created), 0);
+    const speedOut = recent.reduce((a, r) => a + r.gen, 0);
+    const outputTps = speedMs > 0 ? (speedOut / speedMs) * 1000 : null;
 
     const modelID = lastMsg?.modelID ?? null;
     const providerID = lastMsg?.providerID ?? null;
     const ctxUsed = lastMsg?.ctxTokens ?? null;
     const ctxWindow = contextWindowFor(providerID, modelID, contextOverride);
-
-    const genMs = gen?.ms ?? 0;
-    const genOut = gen?.out ?? 0;
 
     const running = actors.filter((a) => a.status === "running").length;
 
@@ -420,7 +433,7 @@ export class Store {
         lastAt: span?.lastAt ?? null,
         spanMs: span?.firstAt ? (span.lastAt ?? Date.now()) - span.firstAt : 0,
         genMs,
-        outputTps: genMs > 0 ? (genOut / genMs) * 1000 : null,
+        outputTps,
         lastStepAt: lastMsg?.completedAt ?? null,
       },
       // Per-model usage: main row shows the current one, the rest are tucked

@@ -102,7 +102,7 @@ insertMsg.run(
     agent: "build",
     modelID: "deepseek-flash",
     providerID: "deepseek",
-    tokens: { total: 9500, output: 250 },
+    tokens: { total: 9500, output: 250, reasoning: 50 },
     time: { created: T0 + 2000, completed: T0 + 2600 },
   })
 );
@@ -116,8 +116,24 @@ insertMsg.run(
     role: "assistant",
     modelID: "deepseek-flash",
     providerID: "deepseek",
-    tokens: { total: 9000, output: 400 },
+    tokens: { total: 9000, output: 400, reasoning: 100 },
     time: { created: T0 + 1000, completed: T0 + 1500 },
+  })
+);
+// Interrupted turn: completed stamp + multi-day duration + zero generated
+// tokens. Must not drag genMs or tok/s (the live-DB bug that showed 2/s).
+insertMsg.run(
+  "m-a-zombie",
+  A,
+  "main",
+  T0 + 100,
+  T0 + 100 + 42 * 3600_000,
+  JSON.stringify({
+    role: "assistant",
+    modelID: "deepseek-flash",
+    providerID: "deepseek",
+    tokens: { output: 0, reasoning: 0 },
+    time: { created: T0 + 100, completed: T0 + 100 + 42 * 3600_000 },
   })
 );
 for (const t of ["bash", "bash", "read", "actor"]) {
@@ -228,10 +244,15 @@ try {
   eq("工具分布首位", a.tools.byName[0], { tool: "bash", n: 2 });
   eq("子代理数量", [a.actors.total, a.actors.running], [2, 1]);
   eq("任务统计", [a.tasks.total, a.tasks.done, a.tasks.inProgress], [2, 1, 1]);
-  eq("消息数", a.messages.total, 2);
+  eq("消息数", a.messages.total, 3);
   eq("压缩次数", a.messages.compacted, 1);
-  check("生成速度 > 0", a.timing.outputTps > 0, String(a.timing.outputTps));
-  eq("生成耗时 = 有完成时间的消息之和", a.timing.genMs, 500 + 600);
+  // 400+100 over 500ms + 250+50 over 600ms; 42h zero-token zombie excluded.
+  eq("生成耗时排除零 token 僵尸消息", a.timing.genMs, 500 + 600);
+  eq(
+    "生成速度 = 近期 (output+reasoning)/时长",
+    Math.round(a.timing.outputTps * 1000) / 1000,
+    Math.round(((800 / 1100) * 1000) * 1000) / 1000
+  );
 
   const b = store.sessionStats(B);
   eq("空会话: 步数为 0", b.tokens.steps, 0);
