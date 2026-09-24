@@ -10,7 +10,8 @@ import {
   readFileSync,
   mkdirSync,
   appendFileSync,
-  writeFileSync,
+  statSync,
+  renameSync,
 } from "node:fs";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline/promises";
@@ -35,10 +36,20 @@ const LOG_DIR = join(ROOT, "logs");
 const LOG_FILE = join(LOG_DIR, "statusbar.log");
 
 // Mirror every line to disk: a hidden launcher has no window, and the log is
-// the only record of what happened.
+// the only record of what happened. Append, so a death is still diagnosable
+// after the next start; roll over when it gets big.
 try {
   mkdirSync(LOG_DIR, { recursive: true });
-  writeFileSync(LOG_FILE, `--- ${new Date().toISOString()} 启动 ---\n`, "utf8");
+  try {
+    if (statSync(LOG_FILE).size > 512 * 1024) {
+      renameSync(LOG_FILE, LOG_FILE + ".1");
+    }
+  } catch {}
+  appendFileSync(
+    LOG_FILE,
+    `\n--- ${new Date().toISOString()} 启动 (pid ${process.pid}) ---\n`,
+    "utf8"
+  );
   for (const level of ["log", "warn", "error"]) {
     const original = console[level].bind(console);
     console[level] = (...args) => {

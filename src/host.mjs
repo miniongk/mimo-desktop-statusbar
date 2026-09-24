@@ -98,11 +98,27 @@ export function pidAlive(pid) {
 }
 
 export function checkLock() {
+  let pid = null;
   try {
-    const pid = Number(readFileSync(LOCK_FILE, "utf8").trim());
-    if (pid && pid !== process.pid && pidAlive(pid)) return pid;
-  } catch {}
-  return null;
+    pid = Number(readFileSync(LOCK_FILE, "utf8").trim());
+  } catch {
+    return null;
+  }
+  if (!pid || Number.isNaN(pid) || pid === process.pid) return null;
+  if (!pidAlive(pid)) return null;
+  // Windows recycles pids fast: a live pid is not proof the holder is ours.
+  // Without this check a stale lock next to a recycled pid blocks startup.
+  const r = spawnSync(
+    "powershell",
+    [
+      "-NoProfile",
+      "-Command",
+      `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`,
+    ],
+    { encoding: "utf8", windowsHide: true }
+  );
+  const cmdline = (r.stdout ?? "").trim();
+  return /launch\.mjs|inject\.mjs|enable\.mjs/.test(cmdline) ? pid : null;
 }
 
 export function acquireLock() {

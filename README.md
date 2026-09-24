@@ -40,6 +40,7 @@ That single action does four things:
 - creates Desktop / Start Menu shortcuts named 「MiMo 统计条」(a backup entry point)
 - **adds the debug switch to the MiMo shortcuts** on the Desktop, Start Menu and taskbar — afterwards you launch MiMo exactly as usual and the bar is just there
 - **registers a hidden logon watcher**: after an app update restarts MiMo without the switch, it puts MiMo back on the switch by itself
+- **registers a keep-alive task** (every 5 minutes): the logon watcher only fires at login, so without this an injector that dies mid-session stays dead until the next login
 
 MiMo's icons, name and install directory are untouched; the shortcuts only gain a launch argument. Everything is reversible (see Uninstall).
 
@@ -64,6 +65,7 @@ If MiMo Desktop is not in its default location, set `MIMO_STATSBAR_APP` to the f
 | Want to | Do this |
 |---|---|
 | check auto-start is on | a shortcut named 「MiMo 会话统计条」in the Startup folder; delete it to turn off |
+| check the keep-alive is on | `schtasks /Query /TN mimo-statusbar-keepalive` (remove with `schtasks /Delete /TN mimo-statusbar-keepalive /F`) |
 | enable / recover manually | double-click 「MiMo 统计条」 (= `bin\enable.cmd`) |
 | turn the bar off for now | double-click `bin\stop.cmd` |
 | uninstall completely | double-click `bin\uninstall.cmd` |
@@ -189,7 +191,7 @@ Environment overrides: `MIMO_STATSBAR_CONFIG` (alternate config file), `MIMO_STA
 
 ### Uninstall
 
-Double-click `bin\uninstall.cmd`. It stops the injector, removes the 「MiMo 统计条」shortcuts, **restores the MiMo shortcuts** (strips the debug switch) and **removes the logon watcher**. Add `--purge` to delete the install directory as well.
+Double-click `bin\uninstall.cmd`. It stops the injector, removes the 「MiMo 统计条」shortcuts, **restores the MiMo shortcuts** (strips the debug switch) and **removes the logon watcher and the keep-alive task**. Add `--purge` to delete the install directory as well.
 
 ### Troubleshooting
 
@@ -259,8 +261,9 @@ MIT
 - 建桌面 / 开始菜单快捷方式「MiMo 统计条」(备用入口)
 - **给 MiMo 的桌面 / 开始菜单 / 任务栏快捷方式加上调试端口** —— 之后照常点 MiMo 图标,统计条就在
 - **注册开机自启**(隐藏的看门狗):登录后静默常驻;应用更新把 MiMo 重启后若没带端口,它会自动补一次带端口的重启
+- **注册自愈计划任务**(每 5 分钟):开机自启只在登录时跑一次,注入器如果中途死了会一直躺着 —— 这个任务会把它拉起来
 
-  > 启动项是一个指向 `wscript.exe` 的快捷方式(不是脚本文件)。往启动文件夹里写 `.vbs` 会被杀软按恶意行为拦掉,快捷方式不会 —— 这也是它全程无窗口的原因。
+  > 启动项是一个指向 `wscript.exe` 的快捷方式(不是脚本文件)。往启动文件夹里写 `.vbs` 会被杀软按恶意行为拦掉,快捷方式不会 —— 这也是它全程无窗口的原因。两者都指向**安装目录**,不依赖解压出来的那个文件夹。
 
 MiMo 自己的图标、名字、安装目录都没动,只是快捷方式多了一个启动参数。全部可还原(见卸载)。
 
@@ -285,6 +288,7 @@ MiMo Desktop 不在默认位置时,先设环境变量 `MIMO_STATSBAR_APP` 指向
 | 操作 | 怎么做 |
 |---|---|
 | 开机自启 | 已默认开启(启动文件夹里的「MiMo 会话统计条」快捷方式,删掉它即停) |
+| 自愈(进程死了自动拉起) | 已默认开启(`schtasks /Query /TN mimo-statusbar-keepalive`;删除即停) |
 | 手动启用 / 恢复 | 双击桌面「MiMo 统计条」(= `bin\enable.cmd`) |
 | 暂时关掉统计条 | 双击 `bin\stop.cmd` |
 | 完全卸载 | 双击 `bin\uninstall.cmd` |
@@ -414,7 +418,7 @@ input × price.input            ← input 已减掉缓存部分
 1. 停掉后台注入器(统计条约 10 秒内从界面上消失)
 2. 删掉「MiMo 统计条」快捷方式
 3. **还原 MiMo 的桌面 / 开始菜单 / 任务栏快捷方式**(去掉加上的调试端口)
-4. **移除开机自启**
+4. **移除开机自启和自愈计划任务**
 
 想连安装目录一起删掉,用 `bin\uninstall.cmd --purge`。
 

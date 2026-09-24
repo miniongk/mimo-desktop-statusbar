@@ -16,6 +16,7 @@ import {
   findApp,
   isRunning,
   debugPortReady,
+  checkLock,
   killApp,
   waitForExit,
   sleep,
@@ -68,8 +69,15 @@ if (patched.error) say("[!] 快捷方式处理失败:", patched.error);
 else if (patched.changed.length) {
   say(`[*] 已给 ${patched.changed.length} 个 MiMo 快捷方式加上调试端口:`);
   for (const p of patched.changed) say("      ", p);
-} else {
+} else if (!quiet) {
   say("[*] MiMo 快捷方式已带调试端口(无需改动)。");
+}
+
+// Steady state: a healthy injector and a reachable app. This is what the
+// periodic keep-alive sees almost every time, so it must be a silent no-op.
+if (portUp && checkLock()) {
+  say("[*] 统计条已在运行,无需操作。");
+  process.exit(0);
 }
 
 // 2. Recover the running app if it came up without the switch.

@@ -18,7 +18,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { installAutostart } from "./autostart.mjs";
+import { installAutostart, installKeepAlive } from "./autostart.mjs";
 
 const PKG_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SHORTCUT_NAME = "MiMo 统计条";
@@ -218,10 +218,17 @@ async function main() {
 
   // The logon watcher is what makes it ride along with MiMo. Registered here,
   // not in enable.mjs: enable --watch is what the watcher itself runs, so it
-  // cannot be the thing that first creates it.
-  const auto = installAutostart();
+  // cannot be the thing that first creates it. Both must point at targetDir —
+  // the copy that stays after the unpack folder is deleted.
+  const auto = installAutostart(targetDir);
   if (auto.ok) console.log(`开机自启  : ${auto.path}`);
   else console.log("[!] 开机自启注册失败:", auto.error, "(可稍后手动加)");
+
+  // The Startup entry only fires at logon, so a dead injector would stay dead
+  // until the next login. A repeating task covers the gap.
+  const ka = installKeepAlive({ root: targetDir, everyMinutes: 5 });
+  if (ka.ok) console.log(`自愈任务  : ${ka.task}(每 ${ka.everyMinutes} 分钟检查一次)`);
+  else console.log("[!] 自愈任务注册失败:", ka.error, "(可稍后手动加)");
 
   console.log("\n下一步:");
   console.log("  启用脚本会顺手把 MiMo 的桌面/开始菜单/任务栏快捷方式加上调试端口");

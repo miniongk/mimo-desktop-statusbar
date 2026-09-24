@@ -9,7 +9,12 @@ import { spawn, spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { unpatchShortcuts } from "./shortcuts.mjs";
-import { removeAutostart, autostartStatus } from "./autostart.mjs";
+import {
+  removeAutostart,
+  autostartStatus,
+  removeKeepAlive,
+  keepAliveStatus,
+} from "./autostart.mjs";
 
 const PKG_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const LOCK = join(PKG_ROOT, "logs", "injector.lock");
@@ -124,6 +129,14 @@ else if (a.ok) console.log("[*] 没有开机自启项。");
 else console.log("[!] 移除开机自启失败:", a.error);
 if (autostartStatus().installed) {
   console.log("[!] 开机自启仍在,可手动删除:", autostartStatus().path);
+}
+
+const ka = removeKeepAlive();
+if (ka.ok && ka.removed) console.log("[*] 已移除自愈计划任务。");
+else if (ka.ok) console.log("[*] 没有自愈计划任务。");
+else console.log("[!] 移除自愈任务失败:", ka.error);
+if (keepAliveStatus().installed) {
+  console.log("[!] 自愈任务仍在,可手动删除: schtasks /Delete /TN", keepAliveStatus().task);
 }
 
 if (purge) {
