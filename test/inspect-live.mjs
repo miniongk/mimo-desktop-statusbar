@@ -78,14 +78,23 @@ console.log("DB 该会话       :", {
 });
 
 const follow = agreed;
+// The bar's main row is the *current model's* slice; session truth lives in
+// totals, and models[] carries the per-model breakdown.
 const numbersMatch =
   vm != null &&
   stats != null &&
-  vm.tools?.total === stats.tools?.total &&
-  vm.tokens?.steps === stats.tokens?.steps;
+  vm.totals?.tools === stats.tools?.total &&
+  vm.totals?.steps === stats.tokens?.steps &&
+  Array.isArray(vm.models) &&
+  vm.models.length > 0 &&
+  vm.models.filter((m) => m.isCurrent).length === 1;
 
 console.log("\n跟随 currentKey :", follow ? "YES" : "NO");
-console.log("数字与该会话一致:", numbersMatch ? "YES" : "NO");
+console.log("会话总量一致    :", numbersMatch ? "YES" : "NO");
+if (vm && vm.models) {
+  console.log("当前模型        :", (vm.models.find((m) => m.isCurrent) || {}).modelID);
+  console.log("模型行数        :", vm.models.length);
+}
 if (!follow) {
   console.log("提示:若你刚切换过对话,等 1-2 秒再跑一次;仍不一致说明注入器没在轮询。");
 }
