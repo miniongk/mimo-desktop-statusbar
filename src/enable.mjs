@@ -22,8 +22,10 @@ import {
   sleep,
 } from "./host.mjs";
 import { askYesNo } from "./dialog.mjs";
+import { mayPrompt, declineActive, declineUntil } from "./prompt-policy.mjs";
 import { patchShortcuts, shortcutRoots } from "./shortcuts.mjs";
 import { installAutostart } from "./autostart.mjs";
+import { readFileSync, writeFileSync, rmSync, openSync, closeSync, unlinkSync, statSync } from "node:fs";
 
 const dryRun = process.argv.includes("--dry-run");
 const autoYes = process.argv.includes("--yes");
@@ -32,6 +34,57 @@ const quiet = process.argv.includes("--quiet");
 const say = (...a) => {
   if (!quiet) console.log(...a);
 };
+
+// One enable at a time. watch.js is fire-and-forget and the keepalive task can
+// overlap the logon helper — without this each copy raced toward its own dialog
+// or its own MiMo restart.
+const ENABLE_LOCK = join(ROOT, "logs", "enable.lock");
+function acquireEnableLock() {
+  try {
+    const fd = openSync(ENABLE_LOCK, "wx");
+    closeSync(fd);
+    writeFileSync(ENABLE_LOCK, String(process.pid), "utf8");
+    return true;
+  } catch {
+    try {
+      const pid = Number(readFileSync(ENABLE_LOCK, "utf8").trim());
+      let age = Infinity;
+      try {
+        age = Date.now() - Number(statSync(ENABLE_LOCK).mtimeMs);
+      } catch {}
+      if (pid && pid !== process.pid && age < 2 * 60 * 1000) {
+        try {
+          process.kill(pid, 0);
+          return false;
+        } catch {
+          /* stale */
+        }
+      }
+    } catch {}
+    try {
+      unlinkSync(ENABLE_LOCK);
+    } catch {}
+    try {
+      const fd = openSync(ENABLE_LOCK, "wx");
+      closeSync(fd);
+      writeFileSync(ENABLE_LOCK, String(process.pid), "utf8");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+function releaseEnableLock() {
+  try {
+    const pid = Number(readFileSync(ENABLE_LOCK, "utf8").trim());
+    if (pid === process.pid) unlinkSync(ENABLE_LOCK);
+  } catch {}
+}
+if (!dryRun && !acquireEnableLock()) {
+  say("[*] 另一个启用流程正在进行,本次退出。");
+  process.exit(0);
+}
+process.on("exit", releaseEnableLock);
 
 const launcher = join(ROOT, "src", "launch.mjs");
 const logFile = join(ROOT, "logs", "statusbar.log");
@@ -83,18 +136,37 @@ if (portUp && checkLock()) {
 // 2. Recover the running app if it came up without the switch.
 if (!portUp && running) {
   say("[!] MiMo 正在运行,但没带调试端口 —— 应用更新后重启通常就是这样。");
-  const answer = autoYes
-    ? "yes"
-    : askYesNo(
-        "统计条需要 MiMo 带调试端口启动,当前这次没带(应用更新后重启会导致)。\n\n" +
-          "现在关闭并重启 MiMo 吗?\n\n" +
-          "· 重启会关掉当前对话窗口,会话记录会保留\n" +
-          "· 选「否」也不会有任何改动,之后再双击桌面图标即可",
-        "启用会话统计条"
-      );
-  if (answer !== "yes") {
-    say("    好的,没有改动任何东西。想启用时再双击「MiMo 统计条」。");
-    process.exit(2);
+  // --watch (Startup / keepalive) is unattended: never pop a dialog, just
+  // restart with the switch. Interactive runs may ask — once per cooldown.
+  const DECLINE_STAMP = join(ROOT, "logs", "declined-restart");
+  const priorDecline = (() => {
+    try {
+      return Number(readFileSync(DECLINE_STAMP, "utf8").trim());
+    } catch {
+      return 0;
+    }
+  })();
+  let answer = "yes";
+  if (mayPrompt({ watch, autoYes, interactive: true })) {
+    if (declineActive(priorDecline)) {
+      say("    此前选过「否」,冷却中,本次不重启。想启用时再双击「MiMo 统计条」。");
+      process.exit(2);
+    }
+    const r = askYesNo(
+      "统计条需要 MiMo 带调试端口启动,当前这次没带(应用更新后重启会导致)。\n\n" +
+        "现在关闭并重启 MiMo 吗?\n\n" +
+        "· 重启会关掉当前对话窗口,会话记录会保留\n" +
+        "· 选「否」也不会有任何改动,之后再双击桌面图标即可",
+      "启用会话统计条"
+    );
+    answer = r === "busy" ? "no" : r;
+    if (answer !== "yes") {
+      try {
+        writeFileSync(DECLINE_STAMP, String(declineUntil()), "utf8");
+      } catch {}
+      say("    好的,没有改动任何东西。想启用时再双击「MiMo 统计条」。");
+      process.exit(2);
+    }
   }
   say("    正在关闭 MiMo…");
   killApp(false);
@@ -104,6 +176,9 @@ if (!portUp && running) {
     await waitForExit(10000);
   }
   await sleep(600);
+  try {
+    rmSync(DECLINE_STAMP, { force: true });
+  } catch {}
 }
 
 // 3. Resident injector: hidden, self-healing when an update restarts the app.

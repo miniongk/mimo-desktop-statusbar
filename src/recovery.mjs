@@ -36,6 +36,7 @@ export async function recoverMiMo({ port, mode = "auto", log = () => {}, interac
         "· 选「否」则本次不动,统计条保持不可用",
       "会话统计条"
     );
+    // "busy" = another dialog is up; treat as declined, never stack another.
     if (answer !== "yes") return "declined";
   }
 
